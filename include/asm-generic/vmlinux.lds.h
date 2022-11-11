@@ -436,6 +436,22 @@ defined(CONFIG_AUTOFDO_CLANG)
 	__end_ro_after_init = .;
 #endif
 
+#ifdef CONFIG_PKVM_INTEL
+#include <asm/pkvm_image.h>
+#define PKVM_RODATA							\
+	PKVM_SECTION_NAME(.rodata) : 					\
+		AT(ADDR(PKVM_SECTION_NAME(.rodata)) - LOAD_OFFSET) {	\
+	. = ALIGN(PAGE_SIZE);						\
+	__pkvm_rodata_start = .;					\
+	*(PKVM_SECTION_NAME(.rodata))					\
+	*(PKVM_SECTION_NAME(.data..ro_after_init))			\
+	. = ALIGN(PAGE_SIZE);						\
+	__pkvm_rodata_end = .;						\
+	}
+#else
+#define PKVM_RODATA
+#endif
+
 /*
  * .kcfi_traps contains a list KCFI trap locations.
  */
@@ -536,6 +552,7 @@ defined(CONFIG_AUTOFDO_CLANG)
 									\
 	KCFI_TRAPS							\
 									\
+	PKVM_RODATA							\
 	RO_EXCEPTION_TABLE						\
 	NOTES								\
 	BTF								\
