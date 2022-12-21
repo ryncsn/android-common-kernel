@@ -4585,6 +4585,7 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 {
 	struct kvm_pinned_page *ppage = NULL;
 	kvm_pfn_t orig_pfn;
+	struct page *page;
 	int r;
 
 	/* Dummy roots are used only for shadowing bad guest roots. */
@@ -4626,12 +4627,16 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 
 	r = direct_map(vcpu, fault);
 
-	if (ppage && r == RET_PF_FIXED) {
-		ppage->page = pfn_to_page(fault->pfn);
-		get_page(ppage->page);
-		spin_lock(&vcpu->kvm->pkvm.pinned_page_lock);
-		list_add(&ppage->list, &vcpu->kvm->pkvm.pinned_pages);
-		spin_unlock(&vcpu->kvm->pkvm.pinned_page_lock);
+	if (ppage) {
+		if (r == RET_PF_FIXED && (page = kvm_pfn_to_refcounted_page(fault->pfn))) {
+			ppage->page = page;
+			get_page(page);
+			spin_lock(&vcpu->kvm->pkvm.pinned_page_lock);
+			list_add(&ppage->list, &vcpu->kvm->pkvm.pinned_pages);
+			spin_unlock(&vcpu->kvm->pkvm.pinned_page_lock);
+		} else {
+			kfree(ppage);
+		}
 	}
 
 out_unlock:
