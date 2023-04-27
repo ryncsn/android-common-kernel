@@ -920,9 +920,11 @@ static int mtk_pcie_power_up(struct mtk_gen3_pcie *pcie)
 	int err;
 
 	/* Downstream Component power up before RC */
-	err = mtk_pcie_dsc_power_up(pcie);
-	if (err)
-		return err;
+	if (!device_wakeup_path(pcie->dev)) {
+		err = mtk_pcie_dsc_power_up(pcie);
+		if (err)
+			return err;
+	}
 
 	/* PHY power on and enable pipe clock */
 	reset_control_deassert(pcie->phy_reset);
@@ -978,7 +980,9 @@ static void mtk_pcie_power_down(struct mtk_gen3_pcie *pcie)
 	phy_power_off(pcie->phy);
 	phy_exit(pcie->phy);
 	reset_control_assert(pcie->phy_reset);
-	mtk_pcie_dsc_power_down(pcie);
+
+	if (!pcie->dev->power.is_suspended || !device_wakeup_path(pcie->dev))
+		mtk_pcie_dsc_power_down(pcie);
 }
 
 static int mtk_pcie_setup(struct mtk_gen3_pcie *pcie)
