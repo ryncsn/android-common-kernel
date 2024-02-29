@@ -1228,6 +1228,14 @@
 			mediatek,skip-rpm-cb;
 		};
 
+		mm_smmu: iommu@30800000 {
+			compatible = "mediatek,mt8196-mm-smmu", "arm,smmu-v3";
+			reg = <0 0x30800000 0 0x1e0000>;
+			interrupts = <GIC_SPI 477 IRQ_TYPE_EDGE_RISING 0>;
+			interrupt-names = "combined";
+			#iommu-cells = <1>;
+		};
+
 		disp_ssc0_smi_2x1_sub_comm: smi-comm@30a30000 {
 			compatible = "mediatek,mt8196-smi-common";
 			reg = <0 0x30a30000 0 0x1000>;
@@ -1709,6 +1717,15 @@
 			mediatek,common-id = <12>;
 		};
 
+		gpu_smmu: iommu@48600000 {
+			#iommu-cells = <1>;
+			compatible = "mediatek,mt8196-gpu-smmu", "arm,smmu-v3";
+			reg = <0 0x48600000 0 0x1e0000>;
+			interrupts = <GIC_SPI 616 IRQ_TYPE_LEVEL_HIGH 0>;
+			interrupt-names = "combined";
+			status = "disabled";
+		};
+
 		mfgpll_pll_ctrl_clk: syscon@4b810000 {
 			/* TODO: Fix compatible in driver */
 			compatible = "mediatek,mt8196-mfgpll-pll-ctrl", "mediatek,mt8196-mfgpll_pll_ctrl", "syscon";
@@ -1728,6 +1745,14 @@
 			compatible = "mediatek,mt8196-mfgpll-sc1-pll-ctrl", "mediatek,mt8196-mfgpll_sc1_pll_ctrl", "syscon";
 			reg = <0 0x4b810800 0 0x1000>;
 			#clock-cells = <1>;
+		};
+
+		apu_smmu: iommu@4c000000 {
+			compatible = "mediatek,mt8196-apu-smmu", "arm,smmu-v3";
+			reg = <0 0x4c000000 0 0x1e0000>;
+			interrupts = <GIC_SPI 651 IRQ_TYPE_EDGE_RISING 0>;
+			interrupt-names = "combined";
+			#iommu-cells = <1>;
 		};
 	};
 };
