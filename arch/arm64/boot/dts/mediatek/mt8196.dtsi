@@ -1286,6 +1286,194 @@
 			#clock-cells = <1>;
 		};
 
+		pciephy0: phy@16900000 {
+			compatible = "mediatek,mt8196-pcie-phy";
+			reg = <0 0x16900000 0 0x10000>,
+			      <0 0x16920000 0 0x10000>;
+			reg-names = "sif", "ckm";
+
+			clocks = <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_PHY_P0_MCU_BUS_PCIE>,
+				 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_PHY_P0_PEXTP_REF_PCIE>;
+			power-domains = <&scpsys MT8196_POWER_DOMAIN_PEXTP_PHY0>;
+
+			num-lanes = <1>;
+			#phy-cells = <0>;
+			status = "disabled";
+		};
+
+		pcie0: pcie@16910000 {
+			compatible = "mediatek,mt8196-pcie";
+			device_type = "pci";
+			reg = <0 0x16910000 0 0x4000>;
+			reg-names = "pcie-mac";
+			#address-cells = <3>;
+			#size-cells = <2>;
+			interrupts = <GIC_SPI 337 IRQ_TYPE_LEVEL_HIGH 0>;
+			bus-range = <0x00 0xff>;
+			linux,pci-domain = <0>;
+			pextpcfg = <&pextp0cfg_ao_clk>;
+			ranges = <0x82000000 0 0x50000000 0x0 0x50000000 0 0x8000000>;
+
+			clocks = <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_PL_P_PCIE>,
+				 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_TL_PCIE>,
+				 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_REF_PCIE>,
+				 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_AXI_250_PCIE>,
+				 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_MAC_P0_AHB_APB_PCIE>,
+				 <&pextp0cfg_ao_clk CLK_PEXT_PEXTP_VLP_AO_P0_LP_PCIE>;
+			clock-names = "pl_250m", "tl_26m", "peri_26m",
+				      "peri_mem", "bus", "low_power";
+			assigned-clocks = <&cksys_clk CLK_CK_TL_SEL>;
+			assigned-clock-parents = <&cksys_clk CLK_CK_MAINPLL_D4_D4>;
+
+			resets = <&pextp0ao_rst 0>, <&pextp0ao_rst 1>;
+			reset-names = "mac", "phy";
+			power-domains = <&scpsys MT8196_POWER_DOMAIN_PEXTP_MAC0>;
+
+			phys = <&pciephy0>;
+			phy-names = "pcie-phy";
+
+			status = "disabled";
+
+			#interrupt-cells = <1>;
+			interrupt-map-mask = <0 0 0 7>;
+			interrupt-map = <0 0 0 1 &pcie_intc0 0>,
+					<0 0 0 2 &pcie_intc0 1>,
+					<0 0 0 3 &pcie_intc0 2>,
+					<0 0 0 4 &pcie_intc0 3>;
+
+			pcie_intc0: interrupt-controller {
+				interrupt-controller;
+				#address-cells = <0>;
+				#interrupt-cells = <1>;
+			};
+		};
+
+		pciephy1: phy@16930000 {
+			compatible = "mediatek,mt8196-pcie-phy";
+			reg = <0 0x16930000 0 0x10000>,
+			      <0 0x16950000 0 0x10000>;
+			reg-names = "sif", "ckm";
+
+			clocks = <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_PHY_P1_MCU_BUS_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_PHY_P1_PEXTP_REF_PCIE>;
+			power-domains = <&scpsys MT8196_POWER_DOMAIN_PEXTP_PHY1>;
+
+			num-lanes = <2>;
+			#phy-cells = <0>;
+
+			status = "disabled";
+		};
+
+		pcie1: pcie@16940000 {
+			compatible = "mediatek,mt8196-pcie";
+			device_type = "pci";
+			reg = <0 0x16940000 0 0x4000>;
+			reg-names = "pcie-mac";
+			#address-cells = <3>;
+			#size-cells = <2>;
+			interrupts = <GIC_SPI 338 IRQ_TYPE_LEVEL_HIGH 0>;
+			bus-range = <0x00 0xff>;
+			linux,pci-domain = <1>;
+			pextpcfg = <&pextp1cfg_ao_clk>;
+			ranges = <0x82000000 0 0x58000000 0x0 0x58000000 0 0x18000000>;
+
+			clocks = <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P1_PL_P_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P1_TL_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P1_REF_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P1_AXI_250_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P1_AHB_APB_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_VLP_AO_P1_LP_PCIE>;
+			clock-names = "pl_250m", "tl_26m", "peri_26m",
+				      "peri_mem", "bus", "low_power";
+			assigned-clocks = <&cksys_clk CLK_CK_TL_P1_SEL>;
+			assigned-clock-parents = <&cksys_clk CLK_CK_MAINPLL_D4_D4>;
+
+			resets = <&pextp1ao_rst 0>, <&pextp1ao_rst 1>;
+			reset-names = "mac", "phy";
+			power-domains = <&scpsys MT8196_POWER_DOMAIN_PEXTP_MAC1>;
+
+			phys = <&pciephy1>;
+			phy-names = "pcie-phy";
+
+			status = "disabled";
+
+			#interrupt-cells = <1>;
+			interrupt-map-mask = <0 0 0 7>;
+			interrupt-map = <0 0 0 1 &pcie_intc1 0>,
+					<0 0 0 2 &pcie_intc1 1>,
+					<0 0 0 3 &pcie_intc1 2>,
+					<0 0 0 4 &pcie_intc1 3>;
+
+			pcie_intc1: interrupt-controller {
+				interrupt-controller;
+				#address-cells = <0>;
+				#interrupt-cells = <1>;
+			};
+		};
+
+		pciephy2: phy@16960000 {
+			compatible = "mediatek,mt8196-pcie-phy";
+			reg = <0 0x16960000 0 0x10000>,
+			      <0 0x16980000 0 0x10000>;
+			reg-names = "sif", "ckm";
+
+			clocks = <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_PHY_P2_MCU_BUS_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_PHY_P2_PEXTP_REF_PCIE>;
+			power-domains = <&scpsys MT8196_POWER_DOMAIN_PEXTP_PHY2>;
+
+			num-lanes = <1>;
+			#phy-cells = <0>;
+
+			status = "disabled";
+		};
+
+		pcie2: pcie@16970000 {
+			device_type = "pci";
+			compatible = "mediatek,mt8196-pcie";
+			reg = <0 0x16970000 0 0x4000>;
+			reg-names = "pcie-mac";
+			#address-cells = <3>;
+			#size-cells = <2>;
+			interrupts = <GIC_SPI 339 IRQ_TYPE_LEVEL_HIGH 0>;
+			bus-range = <0x00 0xff>;
+			linux,pci-domain = <2>;
+			pextpcfg = <&pextp1cfg_ao_clk>;
+			ranges = <0x82000000 0 0x70000000 0x0 0x70000000 0 0x8000000>;
+
+			clocks = <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P2_PL_P_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P2_TL_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P2_REF_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P2_AXI_250_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_MAC_P2_AHB_APB_PCIE>,
+				 <&pextp1cfg_ao_clk CLK_PEXT1_PEXTP_VLP_AO_P2_LP_PCIE>;
+			clock-names = "pl_250m", "tl_26m", "peri_26m",
+				      "peri_mem", "bus", "low_power";
+			assigned-clocks = <&cksys_clk CLK_CK_TL_P2_SEL>;
+			assigned-clock-parents = <&cksys_clk CLK_CK_MAINPLL_D4_D4>;
+
+			resets = <&pextp1ao_rst 2>, <&pextp1ao_rst 3>;
+			reset-names = "mac", "phy";
+			power-domains = <&scpsys MT8196_POWER_DOMAIN_PEXTP_MAC2>;
+
+			phys = <&pciephy2>;
+			phy-names = "pcie-phy";
+
+			status = "disabled";
+
+			#interrupt-cells = <1>;
+			interrupt-map-mask = <0 0 0 7>;
+			interrupt-map = <0 0 0 1 &pcie_intc2 0>,
+					<0 0 0 2 &pcie_intc2 1>,
+					<0 0 0 3 &pcie_intc2 2>,
+					<0 0 0 4 &pcie_intc2 3>;
+
+			pcie_intc2: interrupt-controller {
+				interrupt-controller;
+				#address-cells = <0>;
+				#interrupt-cells = <1>;
+			};
+		};
+
 		pextp0cfg_ao_clk: syscon@169b0000 {
 			/* TODO: Fix compatible in driver */
 			compatible = "mediatek,mt8196-pextp0cfg-ao", "mediatek,mt8196-pextp0cfg_ao", "syscon", "simple-mfd";

@@ -40,6 +40,26 @@
 	};
 };
 
+&pcie0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_pins_default>;
+	status = "okay";
+};
+
+&pcie1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie1_pins_default>;
+	status = "okay";
+};
+
+&pciephy0 {
+	status = "okay";
+};
+
+&pciephy1 {
+	status = "okay";
+};
+
 &pio {
 	nor_pins_default: nor-default-pins {
 		pins0 {
@@ -68,6 +88,24 @@
 		pins-cmd-dat {
 			pinmux = <PINMUX_GPIO72__FUNC_GPIO72>;
 			output-high;
+		};
+	};
+
+	pcie0_pins_default: pcie0-default {
+		pins-cmd-dat {
+			pinmux = <PINMUX_GPIO241__FUNC_PCIE_PERSTN>,
+				 <PINMUX_GPIO242__FUNC_PCIE_WAKEN>,
+				 <PINMUX_GPIO243__FUNC_PCIE_CLKREQN>;
+			bias-pull-up;
+		};
+	};
+
+	pcie1_pins_default: pcie1-default {
+		pins-cmd-dat {
+			pinmux = <PINMUX_GPIO145__FUNC_PCIE_WAKEN_1P>,
+				 <PINMUX_GPIO146__FUNC_PCIE_PERSTN_1P>,
+				 <PINMUX_GPIO147__FUNC_PCIE_CLKREQN_1P>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
 		};
 	};
 };
