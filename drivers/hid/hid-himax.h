@@ -110,6 +110,8 @@
 #define HIMAX_DSRAM_ADDR_STYLUS_VERSION			0x100071fc
 #define HIMAX_DSRAM_ADDR_SET_NFRAME			0x10007294
 #define HIMAX_DSRAM_ADDR_2ND_FLASH_RELOAD		0x100072c0
+#define HIMAX_DSRAM_ADDR_STYLUS_CMD			0x10007428
+#define HIMAX_DSRAM_ADDR_STYLUS_INFO			0x10007430
 #define HIMAX_DSRAM_ADDR_FLASH_RELOAD			0x10007f00
 #define HIMAX_DSRAM_ADDR_SORTING_MODE_EN		0x10007f04
 #define HIMAX_DSRAM_ADDR_USB_DETECT			0x10007f38
@@ -185,7 +187,14 @@
  * @HIMAX_ID_REG_RW: Register read/write report ID
  * @HIMAX_ID_FW_UPDATE: Firmware update report ID
  * @HIMAX_ID_FW_UPDATE_HANDSHAKING: Firmware update handshaking report ID
+ * @HIMAX_ID_USI_COLOR: USI color report ID
+ * @HIMAX_ID_USI_WIDTH: USI width report ID
+ * @HIMAX_ID_USI_STYLE: USI style report ID
+ * @HIMAX_ID_USI_BUTTONS: USI buttons report ID
+ * @HIMAX_ID_USI_FIRMWARE: USI stylus firmware version report ID
+ * @HIMAX_ID_USI_PROTOCOL: USI protocol version report ID
  * @HIMAX_ID_INPUT_RD_DE: Input report data disable report ID
+ * @HIMAX_ID_WINDOWS_BLOB_VALID: Windows blob validation report ID
  */
 enum himax_hidraw_id_function {
 	HIMAX_ID_CONTACT_COUNT = 0x03,
@@ -193,7 +202,15 @@ enum himax_hidraw_id_function {
 	HIMAX_ID_REG_RW,
 	HIMAX_ID_FW_UPDATE = 0x0a,
 	HIMAX_ID_FW_UPDATE_HANDSHAKING,
+	HIMAX_ID_USI_COLOR = 0x11,
+	HIMAX_ID_USI_WIDTH,
+	HIMAX_ID_USI_STYLE,
+	HIMAX_ID_USI_BUTTONS = 0x15,
+	HIMAX_ID_USI_FIRMWARE,
+	HIMAX_ID_USI_PROTOCOL,
+	HIMAX_ID_USI_TRANSDUCER = 0x19,
 	HIMAX_ID_INPUT_RD_DE = 0x31,
+	HIMAX_ID_WINDOWS_BLOB_VALID = 0x44,
 };
 
 /**
@@ -507,6 +524,8 @@ union himax_host_ext_rd {
 		struct himax_rd_feature_unit fw_update_handshaking;
 		/* HIMAX_ID_INPUT_RD_DE */
 		struct himax_rd_feature_unit input_rd_en;
+		/* HIMAX_HIMAX_ID_WINDOWS_BLOB_VALIDATION */
+		struct himax_rd_feature_unit windows_blob;
 		u8 end_collection;
 	} rd_struct;
 	u8 host_report_descriptor[sizeof(struct _rd_struct)];
@@ -613,6 +632,51 @@ struct himax_hid_info {
 	u8 pt_num;
 	u8 mkey_num;
 	u8 debug_info[78];
+} __packed;
+
+/**
+ * struct himax_usi_cmd - USI command to IC
+ * @cmd_id: Command ID from user-space
+ * @data: Command data from user-space
+ *
+ * This structure is used to hold the USI command from user-space using HIDRAW.
+ */
+struct himax_usi_cmd {
+	u8 id;
+	u8 data[7];
+} __packed;
+
+/**
+ * struct himax_usi_info - USI stylus information holder
+ * @pen_color: USI Pen color
+ * @pen_color_locked: USI Pen color locked
+ * @pen_width: USI Pen width
+ * @pen_width_locked: USI Pen width locked
+ * @pen_style: USI Pen style
+ * @pen_style_locked: USI Pen style locked
+ * @pen_buttons: USI Pen buttons
+ * @pen_firmware_version: USI Pen firmware version
+ * @pen_protocol_major: USI Pen protocol major
+ * @pen_protocol_minor: USI Pen protocol minor
+ * @pen_transducer: USI Pen transducer
+ *
+ * This structure is used to hold the USI stylus information from IC.
+ * The format is binary fixed, thus need to be packed. The USI stylus
+ * information will be used to report USI data to user-space application
+ * using HIDRAW.
+ */
+struct himax_usi_info {
+	u8 pen_color;
+	u8 pen_color_locked;
+	u8 pen_width;
+	u8 pen_width_locked;
+	u8 pen_style;
+	u8 pen_style_locked;
+	u8 pen_buttons[3];
+	u8 pen_firmware_version[12];
+	u8 pen_protocol_major;
+	u8 pen_protocol_minor;
+	u8 pen_transducer;
 } __packed;
 
 /**

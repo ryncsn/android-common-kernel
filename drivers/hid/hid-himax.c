@@ -13,6 +13,28 @@ static int himax_heatmap_data_init(struct himax_ts_data *ts);
 static int himax_platform_init(struct himax_ts_data *ts);
 static void himax_ts_work(struct himax_ts_data *ts);
 
+static const unsigned char g_windows_blob_validation_key[] = {
+	0xfc, 0x28, 0xfe, 0x84, 0x40, 0xcb, 0x9a, 0x87, 0x0d, 0xbe, 0x57, 0x3c, 0xb6, 0x70,
+	0x09, 0x88, 0x07, 0x97, 0x2d, 0x2b, 0xe3, 0x38, 0x34, 0xb6, 0x6c, 0xed, 0xb0, 0xf7,
+	0xe5, 0x9c, 0xf6, 0xc2,	0x2e, 0x84, 0x1b, 0xe8, 0xb4, 0x51, 0x78, 0x43, 0x1f, 0x28,
+	0x4b, 0x7c, 0x2d, 0x53, 0xaf, 0xfc, 0x47, 0x70, 0x1b, 0x59, 0x6f, 0x74, 0x43, 0xc4,
+	0xf3, 0x47, 0x18, 0x53, 0x1a, 0xa2, 0xa1, 0x71,	0xc7, 0x95, 0x0e, 0x31, 0x55, 0x21,
+	0xd3, 0xb5, 0x1e, 0xe9, 0x0c, 0xba, 0xec, 0xb8, 0x89, 0x19, 0x3e, 0xb3, 0xaf, 0x75,
+	0x81, 0x9d, 0x53, 0xb9, 0x41, 0x57, 0xf4, 0x6d, 0x39, 0x25, 0x29, 0x7c,	0x87, 0xd9,
+	0xb4, 0x98, 0x45, 0x7d, 0xa7, 0x26, 0x9c, 0x65, 0x3b, 0x85, 0x68, 0x89, 0xd7, 0x3b,
+	0xbd, 0xff, 0x14, 0x67, 0xf2, 0x2b, 0xf0, 0x2a, 0x41, 0x54, 0xf0, 0xfd, 0x2c, 0x66,
+	0x7c, 0xf8, 0xc0, 0x8f, 0x33, 0x13, 0x03, 0xf1, 0xd3, 0xc1, 0x0b, 0x89, 0xd9, 0x1b,
+	0x62, 0xcd, 0x51, 0xb7,	0x80, 0xb8, 0xaf, 0x3a, 0x10, 0xc1, 0x8a, 0x5b, 0xe8, 0x8a,
+	0x56, 0xf0, 0x8c, 0xaa, 0xfa, 0x35, 0xe9, 0x42, 0xc4, 0xd8, 0x55, 0xc3, 0x38, 0xcc,
+	0x2b, 0x53, 0x5c, 0x69, 0x52, 0xd5, 0xc8, 0x73,	0x02, 0x38, 0x7c, 0x73, 0xb6, 0x41,
+	0xe7, 0xff, 0x05, 0xd8, 0x2b, 0x79, 0x9a, 0xe2, 0x34, 0x60, 0x8f, 0xa3, 0x32, 0x1f,
+	0x09, 0x78, 0x62, 0xbc, 0x80, 0xe3, 0x0f, 0xbd, 0x65, 0x20, 0x08, 0x13,	0xc1, 0xe2,
+	0xee, 0x53, 0x2d, 0x86, 0x7e, 0xa7, 0x5a, 0xc5, 0xd3, 0x7d, 0x98, 0xbe, 0x31, 0x48,
+	0x1f, 0xfb, 0xda, 0xaf, 0xa2, 0xa8, 0x6a, 0x89, 0xd6, 0xbf, 0xf2, 0xd3, 0x32, 0x2a,
+	0x9a, 0xe4, 0xcf, 0x17, 0xb7, 0xb8, 0xf4, 0xe1, 0x33, 0x08, 0x24, 0x8b, 0xc4, 0x43,
+	0xa5, 0xe5, 0x24, 0xc2
+};
+
 /* Extension report descriptor for HIDRAW debug function */
 static union himax_host_ext_rd g_host_ext_rd = {
 	.host_report_descriptor = {
@@ -42,6 +64,11 @@ static union himax_host_ext_rd g_host_ext_rd = {
 		0x09, 0x02,/* Usage (0x2) */
 		0x96, 0x01, 0x00,/* Report Count (1) */
 		0xb1, 0x02,/* Feature (ID: 49, sz: 8 bits(1 bytes)) */
+		0x85, HIMAX_ID_WINDOWS_BLOB_VALID,
+		0x09, 0xc5,/* Usage (0xc5) */
+		0x96, sizeof(g_windows_blob_validation_key) & 0xff,
+		(sizeof(g_windows_blob_validation_key) >> 8) & 0xff,/* Report Count (256) */
+		0xb1, 0x02,/* Feature (ID: 50, sz: 2048 bits(256 bytes)) */
 		0xc0,/* End Collection */
 	},
 };
@@ -2367,6 +2394,55 @@ static int himax_hid_load_user_firmware(struct himax_ts_data *ts, u8 *fwdata, si
 }
 
 /**
+ * himax_usi_write_cmd() - Write USI command to IC sram
+ * @ts: Himax touch screen data
+ * @cmd: USI command from user-space through HIDRAW
+ *
+ * This function write USI command from user-space to IC SRAM. It check the corresponding
+ * address data first, if they equals all zero in size of himax_usi_cmd. It means FW is ready
+ * to receive next USI command, FW will clean this address when it processed the command.
+ * Then we just write the command to this address for FW to process.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int himax_usi_write_cmd(struct himax_ts_data *ts, struct himax_usi_cmd *cmd)
+{
+	int ret;
+	u32 retry_cnt;
+	const u32 retry_limit = 3;
+	struct himax_usi_cmd tmp;
+	const struct himax_usi_cmd ready_to_write = { 0 };
+
+	for (retry_cnt = 0; retry_cnt < retry_limit; retry_cnt++) {
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_CMD, (u8 *)&tmp,
+					      sizeof(struct himax_usi_cmd));
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: read USI cmd fail\n", __func__);
+			return ret;
+		}
+
+		if (memcmp(&tmp, &ready_to_write, sizeof(struct himax_usi_cmd)) != 0)
+			usleep_range(1000, 2000);
+		else
+			break;
+	}
+
+	if (retry_cnt == retry_limit) {
+		dev_err(ts->dev, "%s: FW is not ready to receive USI command\n", __func__);
+		return -EBUSY;
+	}
+
+	ret = himax_mcu_register_write(ts, HIMAX_DSRAM_ADDR_STYLUS_CMD, (u8 *)cmd,
+				       sizeof(struct himax_usi_cmd));
+	if (ret < 0) {
+		dev_err(ts->dev, "%s: write USI cmd fail\n", __func__);
+		return ret;
+	}
+
+	return 0;
+}
+
+/**
  * himax_hid_get_raw_report - Process hidraw GET REPORT operation
  * @hid: HID device
  * @reportnum: Report ID
@@ -2387,6 +2463,14 @@ static int himax_hid_load_user_firmware(struct himax_ts_data *ts, u8 *fwdata, si
  * - HIMAX_ID_REG_RW: Report the register read data
  * - HIMAX_ID_INPUT_RD_DE: Report current report descriptor disable state
  * - HIMAX_ID_FW_UPDATE: Dummy report return ok only
+ * - HIMAX_ID_USI_COLOR: Report the stylus color data
+ * - HIMAX_ID_USI_WIDTH: Report the stylus width data
+ * - HIMAX_ID_USI_STYLE: Report the stylus style data
+ * - HIMAX_ID_USI_BUTTONS: Report the stylus buttons data {barrel, side, eraser}
+ * - HIMAX_ID_USI_FIRMWARE: Report the stylus firmware version
+ * - HIMAX_ID_USI_PROTOCOL: Report the stylus protocol version
+ * - HIMAX_ID_USI_TRANSDUCER: Report 0, write only attribute
+ * - HIMAX_ID_WINDOWS_BLOB_VALID: Report the windows blob data
  * Case not listed here will return -EINVAL.
  *
  * Return: The length of the data in the buf on success, negative error code
@@ -2397,6 +2481,7 @@ static int himax_hid_get_raw_report(const struct hid_device *hid,
 {
 	int ret;
 	struct himax_ts_data *ts;
+	struct himax_usi_info usi_info;
 	union himax_dword_data *tmp;
 
 	ts = hid->driver_data;
@@ -2581,6 +2666,81 @@ static int himax_hid_get_raw_report(const struct hid_device *hid,
 	case HIMAX_ID_FW_UPDATE:
 		ret = 0;
 		break;
+	/* Report the stylus data */
+	case HIMAX_ID_USI_COLOR:
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_INFO, (u8 *)&usi_info,
+					      sizeof(struct himax_usi_info));
+		if (ret)
+			break;
+		buf[0] = HIMAX_ID_USI_COLOR;
+		buf[1] = usi_info.pen_transducer;
+		buf[2] = usi_info.pen_color;
+		buf[3] = usi_info.pen_color_locked;
+		ret = 4;
+		break;
+	case HIMAX_ID_USI_WIDTH:
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_INFO, (u8 *)&usi_info,
+					      sizeof(struct himax_usi_info));
+		if (ret)
+			break;
+		buf[0] = HIMAX_ID_USI_WIDTH;
+		buf[1] = usi_info.pen_transducer;
+		buf[2] = usi_info.pen_width;
+		buf[3] = usi_info.pen_width_locked;
+		ret = 4;
+		break;
+	case HIMAX_ID_USI_STYLE:
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_INFO, (u8 *)&usi_info,
+					      sizeof(struct himax_usi_info));
+		if (ret)
+			break;
+		buf[0] = HIMAX_ID_USI_STYLE;
+		buf[1] = usi_info.pen_transducer;
+		buf[2] = usi_info.pen_style;
+		buf[3] = usi_info.pen_style_locked;
+		ret = 4;
+		break;
+	case HIMAX_ID_USI_BUTTONS:
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_INFO, (u8 *)&usi_info,
+					      sizeof(struct himax_usi_info));
+		if (ret)
+			break;
+		buf[0] = HIMAX_ID_USI_BUTTONS;
+		buf[1] = usi_info.pen_transducer;
+		memcpy(&buf[2], usi_info.pen_buttons, 3);
+		ret = 5;
+		break;
+	case HIMAX_ID_USI_FIRMWARE:
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_INFO, (u8 *)&usi_info,
+					      sizeof(struct himax_usi_info));
+		if (ret)
+			break;
+		buf[0] = HIMAX_ID_USI_FIRMWARE;
+		buf[1] = usi_info.pen_transducer;
+		memcpy(&buf[2], usi_info.pen_firmware_version, 12);
+		ret = 14;
+		break;
+	case HIMAX_ID_USI_PROTOCOL:
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_STYLUS_INFO, (u8 *)&usi_info,
+					      sizeof(struct himax_usi_info));
+		if (ret)
+			break;
+		buf[0] = HIMAX_ID_USI_PROTOCOL;
+		buf[1] = usi_info.pen_transducer;
+		buf[2] = usi_info.pen_protocol_major;
+		buf[3] = usi_info.pen_protocol_minor;
+		ret = 4;
+		break;
+	case HIMAX_ID_USI_TRANSDUCER:
+		ret = 0;
+		break;
+	/* Report the windows blob data */
+	case HIMAX_ID_WINDOWS_BLOB_VALID:
+		buf[0] = HIMAX_ID_WINDOWS_BLOB_VALID;
+		memcpy(buf + 1, g_windows_blob_validation_key,
+		       sizeof(g_windows_blob_validation_key));
+		ret = len;
+		break;
 	default:
 		dev_err(ts->dev, "%s: Invalid report number\n", __func__);
 		ret = -EINVAL;
@@ -2611,6 +2771,14 @@ static int himax_hid_get_raw_report(const struct hid_device *hid,
  * - HIMAX_ID_INPUT_RD_DE: Set the report descriptor disable state
  * - HIMAX_ID_CONTACT_COUNT: Not support set report, return 0
  * - HIMAX_ID_CFG: Not support set report, return 0
+ * - HIMAX_ID_USI_COLOR: USI color report ID
+ * - HIMAX_ID_USI_WIDTH: USI width report ID
+ * - HIMAX_ID_USI_STYLE: USI style report ID
+ * - HIMAX_ID_USI_BUTTONS: USI buttons report ID
+ * - HIMAX_ID_USI_FIRMWARE: Not support set report, return 0
+ * - HIMAX_ID_USI_PROTOCOL: Not support set report, return 0
+ * - HIMAX_ID_USI_TRANSDUCER: USI transducer report ID for SET
+ * - HIMAX_ID_WINDOWS_BLOB_VALID: Not support set report, return 0
  * Case not listed here will return -EINVAL.
  *
  * Return: 0 on success, negative error code on failure
@@ -2621,6 +2789,7 @@ static int himax_hid_set_raw_report(const struct hid_device *hid,
 {
 	int ret;
 	struct himax_ts_data *ts;
+	struct himax_usi_cmd usi_cmd;
 	union himax_dword_data *tmp_data;
 
 	ts = hid->driver_data;
@@ -2761,8 +2930,20 @@ static int himax_hid_set_raw_report(const struct hid_device *hid,
 		}
 		ret = 0;
 		break;
+	case HIMAX_ID_USI_COLOR:
+	case HIMAX_ID_USI_WIDTH:
+	case HIMAX_ID_USI_STYLE:
+	case HIMAX_ID_USI_BUTTONS:
+	case HIMAX_ID_USI_TRANSDUCER:
+		memset(&usi_cmd, 0, sizeof(struct himax_usi_cmd));
+		memcpy(&usi_cmd, buf, min(len, sizeof(struct himax_usi_cmd)));
+		ret = himax_usi_write_cmd(ts, &usi_cmd);
+		break;
+	case HIMAX_ID_USI_FIRMWARE:
+	case HIMAX_ID_USI_PROTOCOL:
 	case HIMAX_ID_CONTACT_COUNT:
 	case HIMAX_ID_CFG:
+	case HIMAX_ID_WINDOWS_BLOB_VALID:
 		ret = 0;
 		break;
 	default:
