@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/power_supply.h>
 #include <linux/regulator/consumer.h>
 #include <linux/spi/spi.h>
 
@@ -47,6 +48,8 @@
 #define HIMAX_DATA_CLEAR				0x00000000
 /* boot update start delay */
 #define HIMAX_DELAY_BOOT_UPDATE_MS			2000
+#define HIMAX_DELAY_PWR_INIT_CHECK_MS			3000
+#define HIMAX_DELAY_PWR_CHECK_MS			1100
 #define HIMAX_TP_INFO_STR_LEN				12U
 #define HIMAX_ZF_PARTITION_AMOUNT_OFFSET		12
 #define HIMAX_ZF_PARTITION_DESC_SZ			16U
@@ -96,6 +99,7 @@
 #define HIMAX_DSRAM_ADDR_2ND_FLASH_RELOAD		0x100072c0
 #define HIMAX_DSRAM_ADDR_FLASH_RELOAD			0x10007f00
 #define HIMAX_DSRAM_ADDR_SORTING_MODE_EN		0x10007f04
+#define HIMAX_DSRAM_ADDR_USB_DETECT			0x10007f38
 #define HIMAX_DSRAM_ADDR_DBG_MSG			0x10007f40
 #define HIMAX_DSRAM_ADDR_AP_NOTIFY_FW_SUSPEND		0x10007fd0
 /* dsram flag data */
@@ -103,6 +107,9 @@
 #define HIMAX_DSRAM_DATA_AP_NOTIFY_FW_RESUME		0x00000000
 #define HIMAX_DSRAM_DATA_DISABLE_FLASH_RELOAD		0x00009aa9
 #define HIMAX_DSRAM_DATA_FW_RELOAD_DONE			0x000072c0
+#define HIMAX_DSRAM_DATA_USB_ATTACH			0xa55aa55a
+#define HIMAX_DSRAM_DATA_USB_DETACH			0x00000000
+#define HIMAX_DSRAM_DATA_SAFE_MODE_RELEASE		0x00000000
 /* hx83102j-specific register/dsram flags/data */
 #define HIMAX_HX83102J_DSRAM_ADDR_RAW_OUT_SEL		0x100072ec
 #define HIMAX_HX83102J_REG_ADDR_HW_CRC			0x80010000
@@ -405,6 +412,8 @@ struct himax_platform_data {
 
 /**
  * struct himax_ts_data - Touchscreen data holder
+ * @latest_power_status: Latest power status
+ * @usb_connected: USB connected status
  * @xfer_buf: Interrupt data buffer
  * @xfer_rx_data: SPI Transfer receive data buffer
  * @xfer_tx_data: SPI Transfer transmit data buffer
@@ -436,9 +445,13 @@ struct himax_platform_data {
  * @fw_info_table: Firmware information address table of firmware image
  * @hid_desc: HID descriptor
  * @hid_rd_data: HID report descriptor data
+ * @power_notif: Power change notifier
+ * @himax_pwr_wq: Workqueue for power check
+ * @work_pwr: Delayed work for power check
  * @initial_work: Delayed work for TP initialization
  */
 struct himax_ts_data {
+	u8 latest_power_status;
 	u8 *xfer_buf;
 	u8 *xfer_rx_data;
 	u8 *xfer_tx_data;
@@ -457,6 +470,7 @@ struct himax_ts_data {
 	bool ic_boot_done;
 	bool hid_probed;
 	bool resume_succeeded;
+	bool usb_connected;
 	bool zf_update_flag;
 	char firmware_name[64];
 	int touch_data_sz;
@@ -475,6 +489,9 @@ struct himax_ts_data {
 	struct himax_fw_address_table fw_info_table;
 	struct himax_hid_desc hid_desc;
 	struct himax_hid_rd_data hid_rd_data;
+	struct notifier_block power_notif;
+	struct workqueue_struct *himax_pwr_wq;
+	struct delayed_work work_pwr;
 	struct delayed_work initial_work;
 };
 #endif

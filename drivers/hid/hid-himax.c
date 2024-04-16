@@ -7,6 +7,7 @@
 
 #include "hid-himax.h"
 
+static int himax_cable_detect_func(struct himax_ts_data *ts, bool force_renew);
 static int himax_chip_init(struct himax_ts_data *ts);
 static int himax_platform_init(struct himax_ts_data *ts);
 static void himax_ts_work(struct himax_ts_data *ts);
@@ -903,6 +904,81 @@ static int himax_ts_register_interrupt(struct himax_ts_data *ts)
 }
 
 /**
+ * himax_check_power_status() - Check power status
+ * @work: Work struct
+ *
+ * This function is used to check the power status. The function will call
+ * power_supply_is_system_supplied() to get the power status, and call
+ * himax_cable_detect_func() to update power status to FW.
+ *
+ * Return: None
+ */
+static void himax_check_power_status(struct work_struct *work)
+{
+	struct himax_ts_data *ts = container_of(work, struct himax_ts_data,
+						work_pwr.work);
+
+	ts->latest_power_status = power_supply_is_system_supplied();
+
+	dev_info(ts->dev, "Update ts->latest_power_status = %X\n", ts->latest_power_status);
+
+	if (himax_cable_detect_func(ts, true))
+		dev_err(ts->dev, "%s: update cable status failed!\n", __func__);
+}
+
+/**
+ * pwr_notifier_callback() - Power notifier callback
+ * @self: Notifier block
+ * @event: Event from notifier
+ * @data: private data from notifier
+ *
+ * This function is used to handle the power notifier event. The function will
+ * schedule a delayed work to call himax_check_power_status() to check the power
+ * status. Due to power notifier often called multiple times, the function will
+ * cancel the previous delayed work and schedule a new one to work as a debounce.
+ *
+ * Return: 0
+ */
+static int pwr_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+{
+	struct himax_ts_data *ts = container_of(self, struct himax_ts_data,
+						power_notif);
+
+	cancel_delayed_work_sync(&ts->work_pwr);
+	queue_delayed_work(ts->himax_pwr_wq, &ts->work_pwr,
+			   msecs_to_jiffies(HIMAX_DELAY_PWR_CHECK_MS));
+
+	return 0;
+}
+
+/**
+ * himax_pwr_register() - Register power notifier
+ * @work: Work struct
+ *
+ * This function is used to register the power notifier. The function will call
+ * power_supply_reg_notifier() to register the power notifier, and schedule a
+ * delayed work to call himax_check_power_status() to check the power status.
+ *
+ * Return: None
+ */
+static void himax_pwr_register(struct work_struct *work)
+{
+	int ret;
+	struct himax_ts_data *ts = container_of(work, struct himax_ts_data,
+						work_pwr.work);
+
+	ts->power_notif.notifier_call = pwr_notifier_callback;
+	ret = power_supply_reg_notifier(&ts->power_notif);
+	if (ret) {
+		dev_err(ts->dev, "%s: Unable to register power_notif: %d\n", __func__, ret);
+	} else {
+		INIT_DELAYED_WORK(&ts->work_pwr, himax_check_power_status);
+		queue_delayed_work(ts->himax_pwr_wq, &ts->work_pwr,
+				   msecs_to_jiffies(HIMAX_DELAY_PWR_INIT_CHECK_MS));
+	}
+}
+
+/**
  * hx83102j_read_event_stack() - Read event stack from touch chip
  * @ts: Himax touch screen data
  * @buf: Buffer to store the data
@@ -1259,6 +1335,53 @@ static int himax_mcu_check_crc(struct himax_ts_data *ts, u32 start_addr,
 }
 
 /**
+ * himax_mcu_usb_detect_set() - Update power status to FW
+ * @ts: Himax touch screen data
+ * @plugged: Power status, 0 for not connected, 1 for connected
+ *
+ * This function is used to update the power status to the touch chip. The function
+ * write the power status to the TPIC, and read back to verify the write is successful.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int himax_mcu_usb_detect_set(struct himax_ts_data *ts, bool plugged)
+{
+	int ret;
+	u32 retry_cnt;
+	const u32 retry_limit = 5;
+	union himax_dword_data wdata, rdata;
+
+	for (retry_cnt = 0; retry_cnt < retry_limit; retry_cnt++) {
+		if (plugged)
+			wdata.dword = cpu_to_le32(HIMAX_DSRAM_DATA_USB_ATTACH);
+		else
+			wdata.dword = cpu_to_le32(HIMAX_DSRAM_DATA_USB_DETACH);
+
+		ret = himax_mcu_register_write(ts, HIMAX_DSRAM_ADDR_USB_DETECT, wdata.byte, 4);
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: write USB detect status fail!\n", __func__);
+			return ret;
+		}
+
+		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_USB_DETECT, rdata.byte, 4);
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: read USB detect status fail!\n", __func__);
+			return ret;
+		}
+
+		if (rdata.dword == wdata.dword)
+			break;
+	}
+
+	if (retry_cnt == retry_limit) {
+		dev_err(ts->dev, "%s: Failed to set USB detect status\n", __func__);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
  * himax_mcu_read_FW_ver() - Read varies version from touch chip
  * @ts: Himax touch screen data
  *
@@ -1569,6 +1692,22 @@ static int himax_mcu_tp_info_check(struct himax_ts_data *ts)
 }
 
 /**
+ * himax_mcu_resned_cmd_func() - Resend command collection
+ * @ts: Himax touch screen data
+ *
+ * This function is used to collect commands that need to be resent to TPIC after
+ * firmware restore. Usually we put system configuration status FW need to know
+ * after FW restore from system resume, firmware update or esd recovery. Currently,
+ * we put cable status here.
+ *
+ * return: 0 on success, negative error code on failure
+ */
+static int himax_mcu_resend_cmd_func(struct himax_ts_data *ts)
+{
+	return himax_cable_detect_func(ts, true);
+}
+
+/**
  * himax_disable_fw_reload() - Disable the FW reload data from flash
  * @ts: Himax touch screen data
  *
@@ -1805,6 +1944,10 @@ static int himax_zf_part_info(const struct firmware *fw, struct himax_ts_data *t
 		ret = -EINVAL;
 		goto crc_not_match;
 	}
+
+	/* write back system config */
+	if (himax_mcu_resend_cmd_func(ts))
+		dev_warn(ts->dev, "%s: failed to resend config!\n", __func__);
 
 crc_not_match:
 crc_failed:
@@ -2408,6 +2551,38 @@ static int himax_ts_operation(struct himax_ts_data *ts)
 }
 
 /**
+ * himax_cable_detect_func - cable status update handler
+ * @ts: himax touch screen data
+ * @force_renew: force renew cable status
+ *
+ * This function is used to maintain the cable status and call the
+ * corresponding function to update the cable status. If the update action
+ * is failed, it will print the error message and retry the action at the next
+ * time called.
+ *
+ * Return: Return: 0 on success, negative error code on failure
+ */
+static int himax_cable_detect_func(struct himax_ts_data *ts, bool force_renew)
+{
+	int ret;
+	bool connect_status = ts->latest_power_status > 0 ? true : false;
+
+	if (connect_status != ts->usb_connected || force_renew) {
+		ret = himax_mcu_usb_detect_set(ts, connect_status);
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: Cable status change to %s failed\n", __func__,
+				connect_status ? "connected" : "disconnected");
+			return ret;
+		}
+		ts->usb_connected = connect_status;
+		dev_info(ts->dev, "%s: Cable status change: %s\n", __func__,
+			 ts->usb_connected ? "connected" : "disconnected");
+	}
+
+	return 0;
+}
+
+/**
  * himax_ts_work() - Work function for the touch screen
  * @ts: Himax touch screen data
  *
@@ -2415,11 +2590,14 @@ static int himax_ts_operation(struct himax_ts_data *ts)
  * call the himax_ts_operation() to get the touch data, dispatch the data
  * to HID core. If the touch data is not valid, it will reset the TPIC.
  * It will also call the hx83102j_reload_to_active() after the reset action.
+ * It will also call the himax_cable_detect_func() to check the cable status,
+ * and update the cable status to the FW if needed.
  *
  * Return: void
  */
 static void himax_ts_work(struct himax_ts_data *ts)
 {
+	himax_cable_detect_func(ts, false);
 	if (himax_ts_operation(ts) == HIMAX_TS_GET_DATA_FAIL) {
 		dev_info(ts->dev, "%s: Now reset the Touch chip\n", __func__);
 		himax_mcu_ic_reset(ts, true);
@@ -2918,6 +3096,7 @@ static int himax_chip_init(struct himax_ts_data *ts)
 	}
 	INIT_DELAYED_WORK(&ts->initial_work, himax_initial_work);
 	schedule_delayed_work(&ts->initial_work, msecs_to_jiffies(HIMAX_DELAY_BOOT_UPDATE_MS));
+	ts->usb_connected = false;
 	ts->initialized = true;
 
 	return 0;
@@ -3023,9 +3202,23 @@ static int __himax_initial_power_up(struct himax_ts_data *ts)
 		dev_err(ts->dev, "%s: chip init failed\n", __func__);
 		return ret;
 	}
+
+	ts->himax_pwr_wq = create_singlethread_workqueue("HMX_PWR_request");
+	if (!ts->himax_pwr_wq) {
+		dev_err(ts->dev, "%s:  allocate himax_pwr_wq failed\n", __func__);
+		ret = -ENOMEM;
+		goto err_create_pwr_wq_failed;
+	}
+
+	INIT_DELAYED_WORK(&ts->work_pwr, himax_pwr_register);
+	himax_pwr_register(&ts->work_pwr.work);
 	ts->probe_finish = true;
 
 	return 0;
+
+err_create_pwr_wq_failed:
+	himax_chip_deinit(ts);
+	return ret;
 }
 
 /**
