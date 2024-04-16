@@ -13,6 +13,94 @@ static int himax_heatmap_data_init(struct himax_ts_data *ts);
 static int himax_platform_init(struct himax_ts_data *ts);
 static void himax_ts_work(struct himax_ts_data *ts);
 
+/* Extension report descriptor for HIDRAW debug function */
+static union himax_host_ext_rd g_host_ext_rd = {
+	.host_report_descriptor = {
+		0x06, 0x00, 0xff,/* Usage Page (Vendor-defined) */
+		0x09, 0x01,/* Usage (0x1) */
+		0xa1, 0x01,/* Collection (Application) */
+		0x75, 0x08,/* Report Size (8) */
+		0x15, 0x00,/* Logical Minimum (0) */
+		0x26, 0xff, 0x00,/* Logical Maximum (255) */
+		0x85, HIMAX_ID_CFG,/* Report ID (5) */
+		0x09, 0x02,/* Usage (0x2) */
+		0x96, 0xff, 0x00,/* Report Count (255) */
+		0xb1, 0x02,/* Feature (ID: 5, sz: 2040 bits(255 bytes)) */
+		0x85, HIMAX_ID_REG_RW,/* Report ID (6) */
+		0x09, 0x02,/* Usage (0x2) */
+		0x96, (HIMAX_HID_REG_SZ_MAX & 0xff), (HIMAX_HID_REG_SZ_MAX >> 8),
+		0xb1, 0x02,/* Feature (ID: 6, sz: 72 bits(9 bytes)) */
+		0x85, HIMAX_ID_FW_UPDATE,/* Report ID (10) */
+		0x09, 0x02,/* Usage (0x2) */
+		0x96, 0x00, 0x04,/* Report Count (1024) */
+		0x91, 0x02,/* Output (ID: 10, sz: 8192 bits(1024 bytes)) */
+		0x85, HIMAX_ID_FW_UPDATE_HANDSHAKING,/* Report ID (11) */
+		0x09, 0x02,/* Usage (0x2) */
+		0x96, 0x01, 0x00,/* Report Count (1) */
+		0xb1, 0x02,/* Feature (ID: 11, sz: 8 bits(1 bytes)) */
+		0x85, HIMAX_ID_INPUT_RD_DE,/* Report ID (49) */
+		0x09, 0x02,/* Usage (0x2) */
+		0x96, 0x01, 0x00,/* Report Count (1) */
+		0xb1, 0x02,/* Feature (ID: 49, sz: 8 bits(1 bytes)) */
+		0xc0,/* End Collection */
+	},
+};
+
+static const unsigned int g_host_ext_report_desc_sz =
+	sizeof(g_host_ext_rd.host_report_descriptor);
+
+/* Dummy FW layout for user space tool update reference */
+static const struct himax_hid_fw_unit g_dummy_main_code[9] = {
+	{
+		/* 0xa1 means part 0 ready, can send this part of FW */
+		.cmd = 0xa1,
+		.bin_start_offset = 0,
+		.unit_sz = 127,
+	},
+	{
+		/* 0xa2 means part 1 ready, can send this part of FW */
+		.cmd = 0xa2,
+		.bin_start_offset = 129,
+		.unit_sz = 111,
+	},
+};
+
+/* Heatmap report descriptor for input disabled mode */
+static union himax_heatmap_rd g_heatmap_rd = {
+	.host_report_descriptor = {
+		0x05, 0x0d,/* Usage Page (Digitizers) */
+		0x09, 0x0f,/* Usage (0xf) */
+		0xa1, 0x01,/* Collection (Application) */
+		0x85, 0x61,/* Report ID (97) */
+		0x05, 0x0d,/* Usage Page (Digitizers) */
+		0x15, 0x00,/* Logical Minimum (0) */
+		0x27, 0xff, 0xff, 0x00, 0x00,/* Logical Maximum (65535) */
+		0x75, 0x10,/* Report Size (16) */
+		0x95, 0x01,/* Report Count (1) */
+		0x09, 0x6a,/* Usage (0x6a) */
+		0x81, 0x02,/* Input (ID: 97, sz: 16 bits(2 bytes)) */
+		0x09, 0x6b,/* Usage (0x6b) */
+		0x81, 0x02,/* Input (ID: 97, sz: 16 bits(2 bytes)) */
+		0x27, 0xff, 0xff, 0xff, 0xff,/* Logical Maximum (-1) */
+		0x75, 0x20,/* Report Size (32) */
+		0x09, 0x56,/* Usage (0x56) */
+		0x81, 0x02,/* Input (ID: 97, sz: 32 bits(4 bytes)) */
+		0x05, 0x01,/* Usage Page (Generic Desktop) */
+		0x09, 0x3b,/* Usage (0x3b) */
+		0x81, 0x02,/* Input (ID: 97, sz: 32 bits(4 bytes)) */
+		0x05, 0x0d,/* Usage Page (Digitizers) */
+		0x26, 0xff, 0x00,/* Logical Maximum (255) */
+		0x09, 0x6c,/* Usage (0x6c) */
+		0x75, 0x08,/* Report Size (8) */
+		0x96, 0x00, 0x0c,/* Report Count (3072) */
+		0x81, 0x02,/* Input (ID: 97, sz: 24576 bits(3072 bytes)) */
+		0xc0,/* End Collection */
+	},
+};
+
+static const unsigned int g_host_heatmap_report_desc_sz =
+	sizeof(g_heatmap_rd.host_report_descriptor);
+
 /**
  * himax_spi_read() - Read data from SPI
  * @ts: Himax touch screen data
@@ -822,6 +910,7 @@ static int hx83102j_chip_detect(struct himax_ts_data *ts)
 
 		data.dword = le32_to_cpu(data.dword);
 		if ((data.dword & ic_id_mask) == HIMAX_REG_DATA_ICID) {
+			ts->ic_data.bl_size = HIMAX_HX83102J_FLASH_SIZE;
 			ts->ic_data.icid = data.dword;
 			dev_info(ts->dev, "%s: Detect IC HX83102J successfully\n", __func__);
 			return 0;
@@ -1386,6 +1475,39 @@ static int himax_mcu_usb_detect_set(struct himax_ts_data *ts, bool plugged)
 }
 
 /**
+ * himax_hid_update_info() - Update hid info
+ * @ts: Himax touch screen data
+ *
+ * This function is used to update the hid info from firmware image and IC data
+ * for hidraw ioctl to get the hid info. Which tell user space tool the touch
+ * information and how to update the firmware at runtime.The firmware update
+ * mapping tells user space tool how to update the firmware, it separates into
+ * bl part and main part. The bl part is used to update the bootloader, and runs
+ * only once. Which suits the need to update firmware through SPI. So we give
+ * bin_start_offset 0, and unit_sz as the size of firmware image in KB.
+ *
+ * Return: None
+ */
+static void himax_hid_update_info(struct himax_ts_data *ts)
+{
+	memcpy(&ts->hid_info.fw_bin_desc, &ts->fw_bin_desc, sizeof(struct himax_bin_desc));
+	ts->hid_info.vid = cpu_to_be16(ts->hid_desc.vendor_id);
+	ts->hid_info.pid = cpu_to_be16(ts->hid_desc.product_id);
+	ts->hid_info.cfg_version = ts->ic_data.vendor_touch_cfg_ver;
+	ts->hid_info.disp_version = ts->ic_data.vendor_display_cfg_ver;
+	ts->hid_info.rx = ts->ic_data.rx_num;
+	ts->hid_info.tx = ts->ic_data.tx_num;
+	ts->hid_info.y_res = cpu_to_be16(ts->ic_data.y_res);
+	ts->hid_info.x_res = cpu_to_be16(ts->ic_data.x_res);
+	ts->hid_info.pt_num = ts->ic_data.max_point;
+	ts->hid_info.mkey_num = ts->ic_data.button_num;
+	/* firmware table parameters, use only bl part. */
+	ts->hid_info.bl_mapping.cmd = HIMAX_HID_FW_UPDATE_BL_CMD;
+	ts->hid_info.bl_mapping.bin_start_offset = 0;
+	ts->hid_info.bl_mapping.unit_sz = ts->ic_data.bl_size / 1024;
+}
+
+/**
  * himax_mcu_read_FW_ver() - Read varies version from touch chip
  * @ts: Himax touch screen data
  *
@@ -1447,6 +1569,7 @@ static int himax_mcu_read_FW_ver(struct himax_ts_data *ts)
 	}
 	memcpy(ts->ic_data.vendor_proj_info, data, HIMAX_TP_INFO_STR_LEN);
 	dev_info(ts->dev, "%s: Project ID : %s\n", __func__, ts->ic_data.vendor_proj_info);
+	himax_hid_update_info(ts);
 
 	return 0;
 }
@@ -1456,6 +1579,7 @@ static int himax_mcu_read_FW_ver(struct himax_ts_data *ts)
  * @ts: Himax touch screen data
  * @addr: Address of the data in firmware image
  * @descript_buf: token for parsing
+ * @fw_all_data: Firmware image
  *
  * This function is used to parse the descriptor data from the firmware token. The
  * descriptors are mappings of information in the firmware image. The function will
@@ -1465,7 +1589,8 @@ static int himax_mcu_read_FW_ver(struct himax_ts_data *ts)
  *
  * Return: true on success, false on failure
  */
-static bool himax_bin_desc_data_get(struct himax_ts_data *ts, u32 addr, u8 *descript_buf)
+static bool himax_bin_desc_data_get(struct himax_ts_data *ts,
+				    u32 addr, u8 *descript_buf,	const u8 *fw_all_data)
 {
 	u16 chk_end;
 	u16 chk_sum;
@@ -1503,6 +1628,9 @@ static bool himax_bin_desc_data_get(struct himax_ts_data *ts, u32 addr, u8 *desc
 			case HIMAX_FW_CID:
 				ts->fw_info_table.addr_cid_ver_major = image_offset;
 				ts->fw_info_table.addr_cid_ver_minor = image_offset + 1;
+				memcpy(&ts->fw_bin_desc, &fw_all_data
+				       [image_offset - sizeof(ts->hid_info.fw_bin_desc.passwd)],
+				       sizeof(struct himax_bin_desc));
 				break;
 			/* FW version */
 			case HIMAX_FW_VER:
@@ -1567,7 +1695,7 @@ static bool himax_mcu_bin_desc_get(unsigned char *fw, struct himax_ts_data *ts, 
 	for (addr = 0, mapping_count = 0; addr < max_sz; addr += HIMAX_HX83102J_PAGE_SIZE) {
 		fw_buf = &fw[addr];
 		/* Get related data */
-		keep_on_flag = himax_bin_desc_data_get(ts, addr, fw_buf);
+		keep_on_flag = himax_bin_desc_data_get(ts, addr, fw_buf, fw);
 		if (keep_on_flag)
 			mapping_count++;
 		else
@@ -2165,6 +2293,80 @@ static void himax_hid_close(struct hid_device *hid)
 }
 
 /**
+ * free_firmware - Free the firmware data for hidraw run-time update
+ * @ts: Himax touch screen data
+ * @fw: Firmware data
+ *
+ * The function is used to free the firmware data for hidraw run-time update.
+ *
+ * Return: None
+ */
+static void free_firmware(struct himax_ts_data *ts, struct firmware *fw)
+{
+	if (fw) {
+		devm_kfree(ts->dev, fw->data);
+		devm_kfree(ts->dev, fw->priv);
+		devm_kfree(ts->dev, fw);
+	}
+}
+
+/**
+ * himax_hid_load_user_firmware() - Load the firmware data for hidraw run-time update
+ * @ts: Himax touch screen data
+ * @fwdata: Firmware data, usually partial due to ioctl operation
+ * @sz: Size of the firmware data
+ *
+ * The function is used to load the firmware data for hidraw run-time update. The FW data
+ * is loaded to the hid_req_cfg.fw->data buffer. The function will check if the FW data
+ * is complete, if it is complete, it will return HIMAX_LOAD_FIRMWARE_DONE, otherwise, it
+ * will return HIMAX_LOAD_FIRMWARE_ONGOING. Due to IOCTL operation, the FW data is
+ * usually part of the FW image and need to be combined to a complete FW image.
+ *
+ * Return: HIMAX_LOAD_FIRMWARE_DONE when the FW data is complete, HIMAX_LOAD_FIRMWARE_ONGOING
+ * when the FW data is not complete
+ */
+static int himax_hid_load_user_firmware(struct himax_ts_data *ts, u8 *fwdata, size_t sz)
+{
+	if (ts->hid_req_cfg.fw) {
+		/*
+		 * if size is equal to complete FW image size, means new FW is be uploading
+		 * then free the old FW. FW image size is equal to the size of the flash.
+		 */
+		if (ts->hid_req_cfg.fw->size == ts->ic_data.bl_size) {
+			dev_info(ts->dev, "%s: free old fw\n", __func__);
+			free_firmware(ts, ts->hid_req_cfg.fw);
+			ts->hid_req_cfg.fw = NULL;
+		}
+	}
+
+	/* if no FW data, allocate new firmware structure and FW image data space */
+	if (!ts->hid_req_cfg.fw) {
+		ts->hid_req_cfg.fw = devm_kzalloc(ts->dev, sizeof(*ts->hid_req_cfg.fw), GFP_KERNEL);
+		if (!ts->hid_req_cfg.fw)
+			return -ENOMEM;
+
+		ts->hid_req_cfg.fw->data = devm_kzalloc(ts->dev, ts->ic_data.bl_size, GFP_KERNEL);
+		if (!ts->hid_req_cfg.fw->data) {
+			devm_kfree(ts->dev, ts->hid_req_cfg.fw);
+			ts->hid_req_cfg.fw = NULL;
+			return -ENOMEM;
+		}
+	}
+
+	/* copy the FW data to the FW image buffer, exclude the ID byte */
+	memcpy((u8 *)ts->hid_req_cfg.fw->data + ts->hid_req_cfg.fw->size,
+	       (u8 *)fwdata + 1, sz - 1);
+	ts->hid_req_cfg.fw->size += sz - 1;
+	/* When accumlate size is equal to FW image size, means transfer is completed */
+	if (ts->hid_req_cfg.fw->size == ts->ic_data.bl_size) {
+		dev_info(ts->dev, "%s: load firmware done\n", __func__);
+		return HIMAX_LOAD_FIRMWARE_DONE;
+	}
+
+	return HIMAX_LOAD_FIRMWARE_ONGOING;
+}
+
+/**
  * himax_hid_get_raw_report - Process hidraw GET REPORT operation
  * @hid: HID device
  * @reportnum: Report ID
@@ -2180,6 +2382,11 @@ static void himax_hid_close(struct hid_device *hid)
  * the length of data in the buf, passed by user program. The report_type is
  * not used in this driver. We currently support the following report number:
  * - HIMAX_ID_CONTACT_COUNT: Report the maximum number of touch points
+ * - HIMAX_ID_CFG: Report the configuration of the HID device
+ * - HIMAX_ID_FW_UPDATE_HANDSHAKING: Report the handshake status of the FW update
+ * - HIMAX_ID_REG_RW: Report the register read data
+ * - HIMAX_ID_INPUT_RD_DE: Report current report descriptor disable state
+ * - HIMAX_ID_FW_UPDATE: Dummy report return ok only
  * Case not listed here will return -EINVAL.
  *
  * Return: The length of the data in the buf on success, negative error code
@@ -2190,6 +2397,7 @@ static int himax_hid_get_raw_report(const struct hid_device *hid,
 {
 	int ret;
 	struct himax_ts_data *ts;
+	union himax_dword_data *tmp;
 
 	ts = hid->driver_data;
 	if (!ts) {
@@ -2204,10 +2412,361 @@ static int himax_hid_get_raw_report(const struct hid_device *hid,
 		buf[1] = ts->ic_data.max_point;
 		ret = len;
 		break;
+	case HIMAX_ID_CFG:
+		buf[0] = HIMAX_ID_CFG;
+		memcpy(buf + HIMAX_HID_ID_SZ, &ts->hid_info, sizeof(struct himax_hid_info));
+		ret = len;
+		break;
+	/*
+	 * User check FW update status, the correct user update flow is:
+	 * 1. set parameter to HIMAX_HID_FW_UPDATE_MAIN_CMD(0x55), send by
+	 *    HIMAX_ID_FW_UPDATE_HANDSHAKING
+	 * 2. get HIMAX_ID_FW_UPDATE_HANDSHAKING see if status is ready to send FW
+	 * 3. ready, send FW content by HIMAX_ID_FW_UPDATE
+	 * 4. send complete, get HIMAX_ID_FW_UPDATE_HANDSHAKING see if status OK
+	 * 5. by g_dummy_main_code, send 2 parts of main code which we don't use
+	 * 6. tool start sending BL part when status is HIMAX_FWUP_BL_READY
+	 * 7. FW image receive by himax_hid_load_user_firmware() and update
+	 * 8. report hid_info.bl_mapping.cmd which is HIMAX_HID_FW_UPDATE_BL_CMD if tool check.
+	 *    Which means FW transfer complete.
+	 */
+	case HIMAX_ID_FW_UPDATE_HANDSHAKING:
+		/* Already in handshake mode */
+		if (ts->hid_req_cfg.processing_id == HIMAX_ID_FW_UPDATE_HANDSHAKING) {
+			/* Last set command is Bootloader update */
+			if (ts->hid_req_cfg.handshake_set == ts->hid_info.bl_mapping.cmd) {
+				ts->hid_req_cfg.handshake_get = ts->hid_info.bl_mapping.cmd;
+			/* Last set command is main code start */
+			} else if (ts->hid_req_cfg.handshake_set == HIMAX_HID_FW_UPDATE_MAIN_CMD) {
+				/*
+				 * Just report part 0 is ready for update, rest data xferred
+				 * size to 0
+				 */
+				ts->hid_req_cfg.handshake_get = g_dummy_main_code[0].cmd;
+				ts->hid_req_cfg.current_size = 0;
+			/* Last set command is main code part 0 start */
+			} else if (ts->hid_req_cfg.handshake_set == g_dummy_main_code[0].cmd) {
+				/* when part 0 data transfer complete */
+				if (ts->hid_req_cfg.current_size >= g_dummy_main_code[0].unit_sz) {
+					/*
+					 * Just report part 1 is ready for update, reset xferred
+					 * data size to 0
+					 */
+					ts->hid_req_cfg.handshake_get = g_dummy_main_code[1].cmd;
+					ts->hid_req_cfg.current_size = 0;
+				}
+			/* Last set command is main code part 1 start */
+			} else if (ts->hid_req_cfg.handshake_set == g_dummy_main_code[1].cmd) {
+				/* Part 1 xferred completed, request BL part */
+				if (ts->hid_req_cfg.current_size >= g_dummy_main_code[1].unit_sz) {
+					ts->hid_req_cfg.handshake_get = HIMAX_FWUP_BL_READY;
+					ts->hid_req_cfg.current_size = 0;
+				}
+			/* Else just report no error */
+			} else {
+				ts->hid_req_cfg.handshake_get = HIMAX_FWUP_NO_ERROR;
+			}
+			buf[0] = HIMAX_ID_FW_UPDATE_HANDSHAKING;
+			buf[1] = ts->hid_req_cfg.handshake_get;
+		/* Last command is FW sending, report last get update status */
+		} else if (ts->hid_req_cfg.processing_id == HIMAX_ID_FW_UPDATE) {
+			/* Need to lock due to progress check can have only one */
+			mutex_lock(&ts->hid_ioctl_lock);
+			buf[0] = HIMAX_ID_FW_UPDATE_HANDSHAKING;
+			buf[1] = ts->hid_req_cfg.handshake_get;
+			mutex_unlock(&ts->hid_ioctl_lock);
+		/* Shouldn't be here if using right tool, just return ok */
+		} else {
+			buf[0] = HIMAX_ID_FW_UPDATE_HANDSHAKING;
+			buf[1] = HIMAX_FWUP_NO_ERROR;
+		}
+		ret = len;
+		break;
+	case HIMAX_ID_REG_RW:
+		/*
+		 * standard REG RW, Address 4 bytes, Data 4 bytes all fixed
+		 * standard REG RW len = 10 : ID(1) | R/W(1) | ADDR(4) | DATA(4)
+		 */
+		if (len == 10 &&
+		    le32_to_cpup((u32 *)&buf[2]) != HIMAX_REG_TYPE_EXT_TYPE) {
+			/* standard REG RW */
+			ts->hid_req_cfg.reg_addr_sz = 4;
+			ts->hid_req_cfg.reg_data_sz = 4;
+			ts->hid_req_cfg.reg_addr.dword =
+				le32_to_cpup((u32 *)&buf[2]);
+			ret = himax_mcu_register_read(ts, ts->hid_req_cfg.reg_addr.dword,
+						      ts->hid_req_cfg.reg_data,
+						      ts->hid_req_cfg.reg_data_sz);
+			if (!ret) {
+				tmp = (union himax_dword_data *)ts->hid_req_cfg.reg_data;
+				tmp->dword = le32_to_cpu(tmp->dword);
+				buf[0] = HIMAX_ID_REG_RW;
+				/* Reg data at buf[6] */
+				memcpy(&buf[6], ts->hid_req_cfg.reg_data,
+				       ts->hid_req_cfg.reg_data_sz);
+				ret = len;
+			} else {
+				ret = 0;
+			}
+		/*
+		 * EXT type REG RW, Address 1 for AHB, 4 for SRAM/REG, Data 1~256
+		 * EXT REG RW len >= 9 : ID(1) | R/W(1) | EXT_HDR(4) | EXT_TYPE(1) | REG_ADDR(1/4)
+		 *			 | REG_DATA(1~256) => min 9, max 267
+		 */
+		} else if ((len >= 9) && (len <= (1 + HIMAX_HID_REG_SZ_MAX)) &&
+			(((union himax_dword_data *)&buf[2])->dword == HIMAX_REG_TYPE_EXT_TYPE)) {
+			switch (buf[6]) {
+			/* AHB type REG RW, Address 1, Data 1~256 */
+			case HIMAX_REG_TYPE_EXT_AHB:
+				ts->hid_req_cfg.reg_addr_sz = 1;
+				/*
+				 * Data length = total length from user space tool - ID(1) - R/W(1)
+				 *		 - EXT_HDR(4) - EXT_TYPE(1) - REG_ADDR(1)
+				 */
+				ts->hid_req_cfg.reg_data_sz = len - 1 - 1 - 4 - 1 - 1;
+				/* Reg addr at buf[7] */
+				ts->hid_req_cfg.reg_addr.dword = buf[7];
+				/* Call himax_read to read AHB register */
+				ret = himax_read(ts, ts->hid_req_cfg.reg_addr.dword,
+						 ts->hid_req_cfg.reg_data,
+						 ts->hid_req_cfg.reg_data_sz);
+				/* If read success, copy data to buf[8:] */
+				if (!ret) {
+					buf[0] = HIMAX_ID_REG_RW;
+					memcpy(&buf[8], ts->hid_req_cfg.reg_data,
+					       ts->hid_req_cfg.reg_data_sz);
+					ret = len;
+				}
+				break;
+			/* SRAM/REG type REG RW, Address 4, Data 1~256 */
+			case HIMAX_REG_TYPE_EXT_SRAM:
+				ts->hid_req_cfg.reg_addr_sz = 4;
+				/*
+				 * Data length = total length from user space tool - ID(1) - R/W(1)
+				 *		 - EXT_HDR(4) - EXT_TYPE(1) - REG_ADDR(4)
+				 */
+				ts->hid_req_cfg.reg_data_sz = len - 1 - 1 - 4 - 1 - 4;
+				/* Reg addr at buf[7:10] */
+				ts->hid_req_cfg.reg_addr.dword =
+					((union himax_dword_data *)&buf[7])->dword;
+				ret = himax_mcu_register_read(ts, ts->hid_req_cfg.reg_addr.dword,
+							      ts->hid_req_cfg.reg_data,
+							      ts->hid_req_cfg.reg_data_sz);
+				/* If read success, copy data to buf[11:] */
+				if (!ret) {
+					buf[0] = HIMAX_ID_REG_RW;
+					memcpy(&buf[11], ts->hid_req_cfg.reg_data,
+					       ts->hid_req_cfg.reg_data_sz);
+					ret = len;
+				} else {
+					ret = 0;
+				}
+				break;
+			default:
+				dev_err(ts->dev, "%s: Invalid ext type\n", __func__);
+				ret = -EINVAL;
+			}
+		} else {
+			dev_err(ts->dev, "%s: Invalid reg format!\n", __func__);
+			ret = -EINVAL;
+		}
+		break;
+	/* Report current report descriptor disable state */
+	case HIMAX_ID_INPUT_RD_DE:
+		buf[0] = HIMAX_ID_INPUT_RD_DE;
+		buf[1] = ts->hid_req_cfg.input_RD_de;
+		ret = len;
+		break;
+	/* HIMAX_ID_FW_UPDATE is for FW write only */
+	case HIMAX_ID_FW_UPDATE:
+		ret = 0;
+		break;
 	default:
 		dev_err(ts->dev, "%s: Invalid report number\n", __func__);
 		ret = -EINVAL;
 		break;
+	};
+
+	return ret;
+}
+
+/**
+ * himax_hid_set_raw_report() - process hidraw SET REPORT operation
+ * @hid: HID device
+ * @reportnum: Report ID
+ * @buf: Buffer for communication
+ * @len: Length of data in the buffer
+ * @report_type: Report type
+ *
+ * The function for hid_ll_driver.set_raw_report to handle the HIDRAW ioctl
+ * set report request. The report number to handle is based on the report
+ * descriptor of the HID device. The buf is used to communicate with user
+ * program, user pass the ID and parameters to the driver use this buf, and
+ * the driver will return the result to user also use this buf. The len is
+ * the length of data in the buf, passed by user program. The report_type is
+ * not used in this driver. We currently support the following report number:
+ * - HIMAX_ID_FW_UPDATE: Collect the firmware data and update the firmware
+ * - HIMAX_ID_FW_UPDATE_HANDSHAKING: Handshaking status of the FW update
+ * - HIMAX_ID_REG_RW: Write date to specified register/sram
+ * - HIMAX_ID_INPUT_RD_DE: Set the report descriptor disable state
+ * - HIMAX_ID_CONTACT_COUNT: Not support set report, return 0
+ * - HIMAX_ID_CFG: Not support set report, return 0
+ * Case not listed here will return -EINVAL.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int himax_hid_set_raw_report(const struct hid_device *hid,
+				    unsigned char reportnum, __u8 *buf, size_t len,
+				    unsigned char report_type)
+{
+	int ret;
+	struct himax_ts_data *ts;
+	union himax_dword_data *tmp_data;
+
+	ts = hid->driver_data;
+	if (!ts) {
+		dev_err(ts->dev, "hid->driver_data is NULL");
+		return -EINVAL;
+	}
+
+	switch (reportnum) {
+	case HIMAX_ID_FW_UPDATE:
+		if (ts->hid_req_cfg.processing_id == HIMAX_ID_FW_UPDATE_HANDSHAKING) {
+			if (ts->hid_req_cfg.handshake_get == g_dummy_main_code[0].cmd) {
+				ts->hid_req_cfg.handshake_set = g_dummy_main_code[0].cmd;
+				ts->hid_req_cfg.current_size += len - 1;
+				ret = 0;
+				break;
+			} else if (ts->hid_req_cfg.handshake_get == g_dummy_main_code[1].cmd) {
+				ts->hid_req_cfg.handshake_set = g_dummy_main_code[1].cmd;
+				ts->hid_req_cfg.current_size += len - 1;
+				ret = 0;
+				break;
+			}
+		}
+		ret = himax_hid_load_user_firmware(ts, buf, len);
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: load user firmware failed\n", __func__);
+			break;
+		} else if (ret == HIMAX_LOAD_FIRMWARE_ONGOING) {
+			ret = 0;
+			break;
+		}
+		dev_info(ts->dev, "%s: load user firmware succeeded\n", __func__);
+
+		ts->hid_req_cfg.processing_id = HIMAX_ID_FW_UPDATE;
+		ts->hid_req_cfg.handshake_get = HIMAX_FWUP_FLASH_PROG_ERROR;
+		himax_int_enable(ts, false);
+		ret = hx83102j_sense_off(ts, false);
+		if (ret)
+			break;
+		/* Lock it, free after re-init complete */
+		mutex_lock(&ts->hid_ioctl_lock);
+		/* Need to remove HID and probe again, queue re-init work and return immediately */
+		schedule_delayed_work(&ts->initial_work, msecs_to_jiffies(0));
+		ret = 0;
+		break;
+	case HIMAX_ID_FW_UPDATE_HANDSHAKING:
+		ts->hid_req_cfg.processing_id = HIMAX_ID_FW_UPDATE_HANDSHAKING;
+		ts->hid_req_cfg.handshake_set = buf[1];
+		ret = 0;
+		break;
+	case HIMAX_ID_REG_RW:
+		/*
+		 * standard REG RW, Address 4 bytes, Data 4 bytes all fixed
+		 * standard REG RW len = 10 : ID(1) | R/W(1) | ADDR(4) | DATA(4)
+		 */
+		if (len == 10 &&
+		    ((union himax_dword_data *)&buf[2])->dword != HIMAX_REG_TYPE_EXT_TYPE) {
+			/* standard REG RW */
+			if (buf[1] == HIMAX_HID_REG_READ) {
+				ret = 0;
+				break;
+			}
+			ts->hid_req_cfg.reg_addr_sz = 4;
+			ts->hid_req_cfg.reg_data_sz = 4;
+			ts->hid_req_cfg.reg_addr.dword =
+				((union himax_dword_data *)&buf[2])->dword;
+			memcpy(ts->hid_req_cfg.reg_data, &buf[6], 4);
+			tmp_data = (union himax_dword_data *)(ts->hid_req_cfg.reg_data);
+			tmp_data->dword = cpu_to_le32(tmp_data->dword);
+			ret = himax_mcu_register_write(ts,
+						       ts->hid_req_cfg.reg_addr.dword,
+						       ts->hid_req_cfg.reg_data, 4);
+		/*
+		 * EXT type REG RW, Address 1 for AHB, 4 for SRAM/REG, Data 1~256
+		 * EXT REG RW len >= 9 : ID(1) | R/W(1) | EXT_HDR(4) | EXT_TYPE(1) | REG_ADDR(1/4)
+		 *			 | REG_DATA(1~256) => min 9, max 267
+		 */
+		} else if ((len >= 9) && (len <= (1 + HIMAX_HID_REG_SZ_MAX)) &&
+			(((union himax_dword_data *)&buf[2])->dword == HIMAX_REG_TYPE_EXT_TYPE)) {
+			if (buf[1] == HIMAX_HID_REG_READ) {
+				ret = 0;
+				break;
+			}
+			switch (buf[6]) {
+			/* AHB type REG RW, Address 1, Data 1~256 */
+			case HIMAX_REG_TYPE_EXT_AHB:
+				ts->hid_req_cfg.reg_addr_sz = 1;
+				/*
+				 * Data length = total length from user space tool - ID(1) - R/W(1)
+				 *		 - EXT_HDR(4) - EXT_TYPE(1) - REG_ADDR(1)
+				 */
+				ts->hid_req_cfg.reg_data_sz = len - 1 - 1 - 4 - 1 - 1;
+				ts->hid_req_cfg.reg_addr.dword = buf[7];
+				memcpy(ts->hid_req_cfg.reg_data, &buf[8],
+				       ts->hid_req_cfg.reg_data_sz);
+				ret = himax_write(ts, ts->hid_req_cfg.reg_addr.dword, NULL,
+						  ts->hid_req_cfg.reg_data,
+						  ts->hid_req_cfg.reg_data_sz);
+				break;
+			/* SRAM/REG type REG RW, Address 4, Data 1~256 */
+			case HIMAX_REG_TYPE_EXT_SRAM:
+				ts->hid_req_cfg.reg_addr_sz = 4;
+				/*
+				 * Data length = total length from user space tool - ID(1) - R/W(1)
+				 *		 - EXT_HDR(4) - EXT_TYPE(1) - REG_ADDR(4)
+				 */
+				ts->hid_req_cfg.reg_data_sz = len - 1 - 1 - 4 - 1 - 4;
+				ts->hid_req_cfg.reg_addr.dword =
+					((union himax_dword_data *)&buf[7])->dword;
+				memcpy(ts->hid_req_cfg.reg_data, &buf[11],
+				       ts->hid_req_cfg.reg_data_sz);
+				ret = himax_mcu_register_write(ts,
+							       ts->hid_req_cfg.reg_addr.dword,
+							       ts->hid_req_cfg.reg_data,
+							       ts->hid_req_cfg.reg_data_sz);
+				break;
+			default:
+				dev_err(ts->dev, "%s: Invalid ext type\n", __func__);
+				ret = -EINVAL;
+				break;
+			}
+		} else {
+			dev_err(ts->dev, "%s: Invalid reg format!\n", __func__);
+			ret = -EINVAL;
+			break;
+		}
+		ts->hid_req_cfg.processing_id = HIMAX_ID_REG_RW;
+		ts->hid_req_cfg.handshake_set = ts->hid_req_cfg.reg_addr.dword;
+		break;
+	case HIMAX_ID_INPUT_RD_DE:
+		ts->hid_req_cfg.processing_id = HIMAX_ID_INPUT_RD_DE;
+		ts->hid_req_cfg.handshake_set = !!buf[1];
+		if (ts->hid_req_cfg.input_RD_de != (!!buf[1])) {
+			ts->hid_req_cfg.input_RD_de = !!buf[1];
+			/* Re-register HID to update report descriptor */
+			queue_delayed_work(ts->himax_hidraw_wq, &ts->work_hid_update,
+					   msecs_to_jiffies(0));
+		}
+		ret = 0;
+		break;
+	case HIMAX_ID_CONTACT_COUNT:
+	case HIMAX_ID_CFG:
+		ret = 0;
+		break;
+	default:
+		ret = -EINVAL;
 	};
 
 	return ret;
@@ -2235,6 +2794,13 @@ static int himax_raw_request(struct hid_device *hid, unsigned char reportnum, __
 	switch (reqtype) {
 	case HID_REQ_GET_REPORT:
 		ret = himax_hid_get_raw_report(hid, reportnum, buf, len, rtype);
+		break;
+	case HID_REQ_SET_REPORT:
+		if (buf[0] != reportnum) {
+			ret = -EINVAL;
+			break;
+		}
+		ret = himax_hid_set_raw_report(hid, reportnum, buf, len, rtype);
 		break;
 	default:
 		ret = -EINVAL;
@@ -2323,17 +2889,26 @@ err_hid_data:
  * @ts: Himax touch screen data
  *
  * This function is used to remove the HID device.
+ * It will free the firmware space if it is not NULL.
  *
  * Return: None
  */
 static void himax_hid_remove(struct himax_ts_data *ts)
 {
+	mutex_lock(&ts->hid_ioctl_lock);
 	if (ts && ts->hid)
 		hid_destroy_device(ts->hid);
 	else
-		return;
+		goto out;
 
 	ts->hid = NULL;
+	if (ts->hid_req_cfg.fw) {
+		dev_info(ts->dev, "%s: free fw\n", __func__);
+		free_firmware(ts, ts->hid_req_cfg.fw);
+		ts->hid_req_cfg.fw = NULL;
+	}
+out:
+	mutex_unlock(&ts->hid_ioctl_lock);
 }
 
 /**
@@ -2582,12 +3157,20 @@ static int himax_ts_operation(struct himax_ts_data *ts)
 	if (!(ret == HIMAX_TS_REPORT_DATA))
 		return ret;
 	if (ts->hid_probed) {
+		offset = 0;
+		if (!ts->hid_req_cfg.input_RD_de)
+			ret = himax_hid_report(ts,
+					       ts->xfer_buf + offset + HIMAX_HID_REPORT_HDR_SZ,
+					       ts->hid_desc.max_input_length -
+					       HIMAX_HID_REPORT_HDR_SZ);
 		offset = ts->hid_desc.max_input_length;
 		if (ts->ic_data.stylus_function) {
-			ret += himax_hid_report(ts,
-						ts->xfer_buf + offset + HIMAX_HID_REPORT_HDR_SZ,
-						ts->hid_desc.max_input_length -
-						HIMAX_HID_REPORT_HDR_SZ);
+			if (!ts->hid_req_cfg.input_RD_de)
+				ret += himax_hid_report(ts,
+							ts->xfer_buf +
+							offset + HIMAX_HID_REPORT_HDR_SZ,
+							ts->hid_desc.max_input_length -
+							HIMAX_HID_REPORT_HDR_SZ);
 			offset += ts->hid_desc.max_input_length;
 		}
 		if (!ts->ic_data.enc16bits)
@@ -2709,8 +3292,15 @@ static int himax_hid_rd_init(struct himax_ts_data *ts)
 {
 	u32 rd_sz;
 
-	/* The rd_sz is taken from RD size in FW hid report table. */
-	rd_sz = ts->hid_desc.report_desc_length;
+	/*
+	 * If hidraw input debug function is enabled, the rd_sz is combined by
+	 * heatmap_rd size and hidraw_debug_rd size. Otherwise the rd_sz is
+	 * combined by FW RD size and hidraw_debug_rd size.
+	 */
+	if (!ts->hid_req_cfg.input_RD_de)
+		rd_sz = ts->hid_desc.report_desc_length + g_host_ext_report_desc_sz;
+	else
+		rd_sz = g_host_heatmap_report_desc_sz + g_host_ext_report_desc_sz;
 	/* fw_info_table should contain address of hid_rd_desc in FW image */
 	if (ts->fw_info_table.addr_hid_rd_desc != 0) {
 		/* if rd_sz has been change, need to release old one */
@@ -2725,10 +3315,23 @@ static int himax_hid_rd_init(struct himax_ts_data *ts)
 			if (!ts->hid_rd_data.rd_data)
 				return -ENOMEM;
 		}
-		memcpy((void *)ts->hid_rd_data.rd_data,
-		       &ts->himax_fw->data[ts->fw_info_table.addr_hid_rd_desc],
-		       ts->hid_desc.report_desc_length);
-		ts->hid_rd_data.rd_length = ts->hid_desc.report_desc_length;
+
+		/* Copy the base RD from firmware table or heatmap RD only */
+		if (!ts->hid_req_cfg.input_RD_de) {
+			memcpy((void *)ts->hid_rd_data.rd_data,
+			       &ts->himax_fw->data[ts->fw_info_table.addr_hid_rd_desc],
+			       ts->hid_desc.report_desc_length);
+			ts->hid_rd_data.rd_length = ts->hid_desc.report_desc_length;
+		} else {
+			memcpy((void *)ts->hid_rd_data.rd_data,
+			       g_heatmap_rd.host_report_descriptor,
+			       g_host_heatmap_report_desc_sz);
+			ts->hid_rd_data.rd_length = g_host_heatmap_report_desc_sz;
+		}
+		/* Append hidraw_debug_rd to hid_rd_data */
+		memcpy((void *)(ts->hid_rd_data.rd_data + ts->hid_rd_data.rd_length),
+		       &g_host_ext_rd.host_report_descriptor, g_host_ext_report_desc_sz);
+		ts->hid_rd_data.rd_length += g_host_ext_report_desc_sz;
 	}
 
 	return 0;
@@ -2878,11 +3481,17 @@ static void himax_initial_work(struct work_struct *work)
 	const u32 fw_bin_header_sz = 1024;
 
 	ts->ic_boot_done = false;
-	dev_info(ts->dev, "%s: request file %s\n", __func__, ts->firmware_name);
-	ret = request_firmware(&ts->himax_fw, ts->firmware_name, ts->dev);
-	if (ret < 0) {
-		dev_err(ts->dev, "%s: request firmware failed, error code = %d\n", __func__, ret);
-		return;
+	if (ts->hid_req_cfg.fw) {
+		ts->himax_fw = ts->hid_req_cfg.fw;
+		dev_info(ts->dev, "%s: get fw from hid_req_cfg\n", __func__);
+	} else {
+		dev_info(ts->dev, "%s: request file %s\n", __func__, ts->firmware_name);
+		ret = request_firmware(&ts->himax_fw, ts->firmware_name, ts->dev);
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: request firmware failed, error code = %d\n",
+				__func__, ret);
+			return;
+		}
 	}
 	/* Parse the mapping table in 1k header */
 	fw_load_status = himax_mcu_bin_desc_get((unsigned char *)ts->himax_fw->data,
@@ -2941,6 +3550,12 @@ static void himax_initial_work(struct work_struct *work)
 		goto err_hid_rd_init_failed;
 	}
 
+	if (ts->hid_req_cfg.fw) {
+		/* Set flag of HIDRAW FW update result */
+		ts->hid_req_cfg.handshake_get = HIMAX_FWUP_BL_READY;
+		/* Unlock HIDRAW ioctl for result checking */
+		mutex_unlock(&ts->hid_ioctl_lock);
+	}
 	usleep_range(1000000, 1000100);
 	himax_hid_register(ts);
 	if (!ts->hid_probed) {
@@ -2952,7 +3567,9 @@ static void himax_initial_work(struct work_struct *work)
 		}
 	}
 
-	release_firmware(ts->himax_fw);
+	/* Release FW if it is from request_firmware */
+	if (!ts->hid_req_cfg.fw)
+		release_firmware(ts->himax_fw);
 	ts->himax_fw = NULL;
 
 	ts->ic_boot_done = true;
@@ -2972,7 +3589,12 @@ err_power_on_init:
 err_disable_fw_reload:
 err_update_fw_failed:
 err_load_bin_descriptor:
-	release_firmware(ts->himax_fw);
+	if (!ts->hid_req_cfg.fw) {
+		release_firmware(ts->himax_fw);
+	} else {
+		ts->hid_req_cfg.handshake_get = HIMAX_FWUP_FLASH_PROG_ERROR;
+		mutex_unlock(&ts->hid_ioctl_lock);
+	}
 	ts->himax_fw = NULL;
 }
 
@@ -2995,6 +3617,50 @@ static int himax_heatmap_data_init(struct himax_ts_data *ts)
 		return -ENOMEM;
 
 	return 0;
+}
+
+/**
+ * himax_heatmap_data_deinit() - Deinitialize the heatmap data
+ * @ts: Himax touch screen data
+ *
+ * The function is used to deinitialize the heatmap data.
+ *
+ * Return: None
+ */
+static void himax_heatmap_data_deinit(struct himax_ts_data *ts)
+{
+	devm_kfree(ts->dev, ts->heatmap_buf);
+	ts->heatmap_buf = NULL;
+}
+
+/**
+ * himax_hid_update() - Update the HID device
+ * @work: Work structure
+ *
+ * This function is used to update the HID device. When userspace tool switch
+ * on/off the input RD, the HID device should be re-registered to update the
+ * report descriptor. The heatmap size may change and need to release the old
+ * one first.
+ *
+ * Return: None
+ */
+static void himax_hid_update(struct work_struct *work)
+{
+	struct himax_ts_data *ts = container_of(work, struct himax_ts_data, work_hid_update.work);
+
+	himax_int_enable(ts, false);
+	himax_heatmap_data_deinit(ts);
+	if (!ts->hid_req_cfg.input_RD_de) {
+		himax_initial_work(&ts->initial_work.work);
+	} else {
+		if (!himax_hid_rd_init(ts)) {
+			dev_info(ts->dev, "%s: hid rd init success\n", __func__);
+			himax_hid_register(ts);
+			if (ts->hid_probed)
+				himax_hid_report_data_init(ts);
+		}
+	}
+	himax_int_enable(ts, true);
 }
 
 /**
@@ -3194,10 +3860,19 @@ static int himax_chip_init(struct himax_ts_data *ts)
 	}
 	INIT_DELAYED_WORK(&ts->initial_work, himax_initial_work);
 	schedule_delayed_work(&ts->initial_work, msecs_to_jiffies(HIMAX_DELAY_BOOT_UPDATE_MS));
+	ts->himax_hidraw_wq =
+		create_singlethread_workqueue("himax_hidraw_wq");
+	if (!ts->himax_hidraw_wq) {
+		dev_err(ts->dev, "%s: allocate himax_hidraw_wq failed\n", __func__);
+		ret = -ENOMEM;
+		goto err_hidraw_wq_failed;
+	}
+	INIT_DELAYED_WORK(&ts->work_hid_update, himax_hid_update);
 	ts->usb_connected = false;
 	ts->initialized = true;
 
 	return 0;
+err_hidraw_wq_failed:
 	cancel_delayed_work_sync(&ts->initial_work);
 err_update_cfg_buf_alloc_failed:
 
@@ -3214,6 +3889,7 @@ err_update_cfg_buf_alloc_failed:
  */
 static void himax_chip_deinit(struct himax_ts_data *ts)
 {
+	destroy_workqueue(ts->himax_hidraw_wq);
 	cancel_delayed_work_sync(&ts->initial_work);
 }
 
@@ -3537,6 +4213,7 @@ static int himax_spi_drv_probe(struct spi_device *spi)
 	spin_lock_init(&ts->irq_lock);
 	mutex_init(&ts->rw_lock);
 	mutex_init(&ts->reg_lock);
+	mutex_init(&ts->hid_ioctl_lock);
 	mutex_init(&ts->zf_update_lock);
 	dev_set_drvdata(&spi->dev, ts);
 	spi_set_drvdata(spi, ts);
@@ -3573,6 +4250,10 @@ static void himax_spi_drv_remove(struct spi_device *spi)
 			if (ts->hid_probed)
 				himax_hid_remove(ts);
 		}
+		power_supply_unreg_notifier(&ts->power_notif);
+		cancel_delayed_work_sync(&ts->work_pwr);
+		destroy_workqueue(ts->himax_pwr_wq);
+
 		himax_chip_deinit(ts);
 		himax_platform_deinit(ts);
 	}

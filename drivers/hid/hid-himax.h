@@ -60,6 +60,12 @@
 #define HIMAX_HEAT_MAP_INFO_SZ \
 	(HIMAX_HEAT_MAP_HID_HDR_SZ + HIMAX_HEAT_MAP_DATA_HDR_SZ)
 #define HIMAX_HID_ID_SZ					1U
+#define HIMAX_HID_REG_RW_SZ				1U
+/*
+ * HIDRAW REG R/W command max length:
+ * [READ/WRITE:1][0xFFFFFFFF][REG_TYPE:1][REG_ADDR:1|4][REG_DATA:1~256]
+ */
+#define HIMAX_HID_REG_SZ_MAX				(1 + 4 + 1 + 4 + 256)
 /* HIDRAW report header size */
 #define HIMAX_HID_REPORT_HDR_SZ				2U
 /* hx83102j IC parameters */
@@ -150,6 +156,9 @@
 /* HIMAX SPI function select, 1st byte of any SPI command sequence */
 #define HIMAX_SPI_FUNCTION_READ				0xf3
 #define HIMAX_SPI_FUNCTION_WRITE			0xf2
+/* HIDRAW commands */
+#define HIMAX_HID_FW_UPDATE_BL_CMD			0x77
+#define HIMAX_HID_FW_UPDATE_MAIN_CMD			0x55
 /* Map code of FW 1k header */
 #define HIMAX_TP_CONFIG_TABLE				0x00000a00
 #define HIMAX_FW_CID					0x10000000
@@ -157,15 +166,66 @@
 #define HIMAX_CFG_VER					0x10000600
 #define HIMAX_HID_TABLE					0x30000100
 #define HIMAX_FW_BIN_DESC				0x10000000
+/* time function generalize */
+#define HIMAX_TIME_VAR					timespec64
+#define HIMAX_TIME_VAR_FINE				tv_nsec
+#define HIMAX_TIME_VAR_FINE_UNIT			(1000 * 1000)
+#define HIMAX_TIME_FUNC					ktime_get_ts64
+/* Firmware update error code for HIDRAW */
+#define HIMAX_FWUP_NO_ERROR				0x77
+#define HIMAX_FWUP_BL_READY				0xb1
+#define HIMAX_FWUP_FLASH_PROG_ERROR			0xb5
 #define HIMAX_BOOT_UPGRADE_FWNAME			"himax_i2chid"
 #define HIMAX_FW_EXT_NAME				".bin"
 
 /**
  * enum himax_hidraw_id_function - HIDRAW report IDs
  * @HIMAX_ID_CONTACT_COUNT: Contact count report ID
+ * @HIMAX_ID_CFG: Configuration report ID
+ * @HIMAX_ID_REG_RW: Register read/write report ID
+ * @HIMAX_ID_FW_UPDATE: Firmware update report ID
+ * @HIMAX_ID_FW_UPDATE_HANDSHAKING: Firmware update handshaking report ID
+ * @HIMAX_ID_INPUT_RD_DE: Input report data disable report ID
  */
 enum himax_hidraw_id_function {
 	HIMAX_ID_CONTACT_COUNT = 0x03,
+	HIMAX_ID_CFG = 0x05,
+	HIMAX_ID_REG_RW,
+	HIMAX_ID_FW_UPDATE = 0x0a,
+	HIMAX_ID_FW_UPDATE_HANDSHAKING,
+	HIMAX_ID_INPUT_RD_DE = 0x31,
+};
+
+/**
+ * enum himax_hid_reg_action - HIDRAW register read/write action
+ * @HIMAX_HID_REG_READ: Read action
+ * @HIMAX_HID_REG_WRITE: Write action
+ */
+enum himax_hid_reg_action {
+	HIMAX_HID_REG_READ,
+	HIMAX_HID_REG_WRITE
+};
+
+/**
+ * enum himax_hid_reg_types - Reg type parameters if hidraw reg action
+ * @HIMAX_REG_TYPE_EXT_AHB: AHB register type in EXT type
+ * @HIMAX_REG_TYPE_EXT_SRAM: SRAM register type in EXT type
+ * @HIMAX_REG_TYPE_EXT_TYPE: Special address value to indicate using EXT type
+ */
+enum himax_hid_reg_types {
+	HIMAX_REG_TYPE_EXT_AHB,
+	HIMAX_REG_TYPE_EXT_SRAM,
+	HIMAX_REG_TYPE_EXT_TYPE = 0xFFFFFFFF
+};
+
+/**
+ * enum himax_hid_load_user_fw_status - HIDRAW return code for firmware update
+ * @HIMAX_LOAD_FIRMWARE_ONGOING: Indicate firmware file is still loading
+ * @HIMAX_LOAD_FIRMWARE_DONE: Indicate firmware file has been loaded
+ */
+enum himax_hid_load_user_fw_status {
+	HIMAX_LOAD_FIRMWARE_ONGOING = 1,
+	HIMAX_LOAD_FIRMWARE_DONE,
 };
 
 /**
@@ -257,6 +317,66 @@ union himax_dword_data {
 };
 
 /**
+ * struct himax_rd_feature_unit - Report descriptor feature unit
+ * @id_tag: ID tag
+ * @id: ID
+ * @usage_tag: Usage tag
+ * @usage: Usage
+ * @report_cnt_tag: Report count tag
+ * @report_cnt: Report count
+ * @feature_tag: Feature tag
+ *
+ * This structure is used to map feature report descriptor array of HIDRAW.
+ * For driver fast access the member of feature report descriptor.
+ */
+struct himax_rd_feature_unit {
+	u8 id_tag;
+	u8 id;
+	u8 usage_tag;
+	u8 usage;
+	u8 report_cnt_tag;
+	u16 report_cnt;
+	u8 feature_tag[2];
+} __packed;
+
+/**
+ * struct himax_hid_req_cfg - HIDRAW request configuration
+ * @reg_data: Register data buffer, not include READ/WRITE, REG_ADDR
+ * @processing_id: Store last ID of HIDRAW request
+ * @handshake_set: Store the HID set parameter for last set request
+ * @handshake_get: Store the HID get parameter for last get request
+ * @current_size: Accumulated size of fw data
+ * @reg_addr_sz: Register address size
+ * @reg_data_sz: Register data size
+ * @input_RD_de: Input report data disable switch
+ * @reg_addr: Register address data
+ * @fw: Firmware data holder from user space
+ *
+ * This structure is used to hold the HIDRAW request configuration.
+ * Member is filled by user space function select.
+ * reg_addr format:
+ * HID register READ/WRITE format:
+ * STANDARD TYPE
+ * [READ/WRITE:1][REG_ADDR:4][REG_DATA:4] : 9 bytes
+ *   1             2~5         6~9
+ * EXT TYPE
+ * [READ/WRITE:1][0xFFFFFFFF][REG_TYPE:1][REG_ADDR:1|4][REG_DATA:1~256]
+ *   1             2~5         6           7|7~10        8~263|11~266
+ */
+struct himax_hid_req_cfg {
+	u8 reg_data[HIMAX_HID_REG_SZ_MAX - HIMAX_HID_REG_RW_SZ - HIMAX_REG_SZ];
+	u32 processing_id;
+	u32 handshake_set;
+	u32 handshake_get;
+	u32 current_size;
+	u32 reg_addr_sz;
+	u32 reg_data_sz;
+	u32 input_RD_de;
+	union himax_dword_data reg_addr;
+	struct firmware *fw;
+};
+
+/**
  * struct himax_ic_data - IC information holder
  * @stylus_ratio: Stylus ratio
  * @vendor_cus_info: Vendor customer information
@@ -269,6 +389,7 @@ union himax_dword_data {
  * @vendor_cid_min_ver: Vendor CID minor version
  * @vendor_panel_ver: Vendor panel version
  * @vendor_sensor_id: Vendor sensor ID
+ * @bl_size: Bootloader size
  * @rx_num: Number of RX
  * @tx_num: Number of TX
  * @button_num: Number of buttons
@@ -293,6 +414,7 @@ struct himax_ic_data {
 	int vendor_cid_min_ver;
 	int vendor_panel_ver;
 	int vendor_sensor_id;
+	u32 bl_size;
 	u32 rx_num;
 	u32 tx_num;
 	u32 button_num;
@@ -304,6 +426,90 @@ struct himax_ic_data {
 	bool stylus_function;
 	bool stylus_v2;
 	bool enc16bits;
+};
+
+/**
+ * struct himax_hid_fw_unit - HIDRAW firmware unit
+ * @cmd: Command from user space indicate which part is trying to update
+ * @bin_start_offset: Start offset of firmware in firmware image
+ * @unit_sz: Size of firmware unit
+ *
+ * This structure is used to hold the HIDRAW firmware unit.
+ * User program will use this structure to select which part of firmware
+ * to update.
+ */
+struct himax_hid_fw_unit {
+	u8 cmd;
+	u16 bin_start_offset;
+	u16 unit_sz;
+} __packed;
+
+/**
+ * union himax_heatmap_rd - heatmap report descriptor
+ * @heatmap_struct: heatmap report descriptor
+ * @host_report_descriptor: heatmap report descriptor array
+ * @_heatmap_struct: heatmap report descriptor structure
+ * @_heatmap_struct.header: header of heatmap report descriptor
+ * @_heatmap_struct.heatmap_info_desc: heatmap information descriptor
+ * @_heatmap_struct.heatmap_data_hdr: heatmap data header
+ * @_heatmap_struct.heatmap_data_cnt_tag: heatmap data count tag
+ * @_heatmap_struct.heatmap_data_cnt: heatmap data count
+ * @_heatmap_struct.heatmap_input_desc: heatmap input descriptor
+ * @_heatmap_struct.end_collection: end collection tag
+ *
+ * This union is used to hold the heatmap report descriptor.
+ * heatmap_struct disammble the report descriptor array to structure
+ * for fast access thus need to be packed.
+ */
+union himax_heatmap_rd {
+	struct __packed _heatmap_struct {
+		u8 header[17];
+		u8 heatmap_info_desc[29];
+		u8 heatmap_data_hdr[9];
+		u8 heatmap_data_cnt_tag;
+		u16 heatmap_data_cnt;
+		u8 heatmap_input_desc[2];
+		u8 end_collection;
+	} heatmap_struct;
+	u8 host_report_descriptor[sizeof(struct _heatmap_struct)];
+};
+
+/**
+ * union himax_host_ext_rd - extend the function of HIDRAW report descriptor
+ * @rd_struct: HIDRAW report descriptor
+ * @host_report_descriptor: HIDRAW report descriptor array
+ * @_rd_struct: HIDRAW report descriptor structure
+ * @_rd_struct.header: header of HIDRAW report descriptor
+ * @_rd_struct.cfg: Enable ID_CFG feature
+ * @_rd_struct.reg_rw: Enable ID_REG_RW feature
+ * @_rd_struct.monitor_sel: Enable ID_TOUCH_MONITOR_SEL feature
+ * @_rd_struct.monitor: Enable ID_TOUCH_MONITOR feature
+ * @_rd_struct.fw_update: Enable ID_FW_UPDATE feature
+ * @_rd_struct.fw_update_handshaking: Enable ID_FW_UPDATE_HANDSHAKING feature
+ * @_rd_struct.self_test: Enable ID_SELF_TEST feature
+ * @_rd_struct.input_rd_en: Enable ID_INPUT_RD_DE feature
+ * @_rd_struct.windows_blob: Enable ID_WINDOWS_BLOB_VALIDATION feature
+ * @_rd_struct.end_collection: end collection tag
+ *
+ * This union is used to extend the function of HIDRAW report descriptor.
+ * User space could use these IDs to debug TPIC.
+ */
+union himax_host_ext_rd {
+	struct __packed _rd_struct {
+		u8 header[14];
+		/* HIMAX_ID_CFG */
+		struct himax_rd_feature_unit cfg;
+		/* HIMAX_ID_REG_RW */
+		struct himax_rd_feature_unit reg_rw;
+		/* HIMAX_ID_FW_UPDATE */
+		struct himax_rd_feature_unit fw_update;
+		/* HIMAX_ID_FW_UPDATE_HANDSHAKING */
+		struct himax_rd_feature_unit fw_update_handshaking;
+		/* HIMAX_ID_INPUT_RD_DE */
+		struct himax_rd_feature_unit input_rd_en;
+		u8 end_collection;
+	} rd_struct;
+	u8 host_report_descriptor[sizeof(struct _rd_struct)];
 };
 
 /**
@@ -372,6 +578,9 @@ struct himax_hid_desc {
 
 /**
  * struct himax_hid_info - IC information holder for HIDRAW function
+ * @main_mapping: Main code mapping descriptor for fw update program
+ * @bl_mapping: Bootloader mapping descriptor for fw update program
+ * @fw_bin_desc: Firmware binary descriptor for fw update program
  * @vid: Vendor ID
  * @pid: Product ID
  * @cfg_info: Configuration information
@@ -389,6 +598,9 @@ struct himax_hid_desc {
  * The format is binary fixed, thus need to be packed.
  */
 struct himax_hid_info {
+	struct himax_hid_fw_unit main_mapping[9];
+	struct himax_hid_fw_unit bl_mapping;
+	struct himax_bin_desc fw_bin_desc;
 	u16 vid;
 	u16 pid;
 	u8 cfg_info[32];
@@ -450,16 +662,22 @@ struct himax_platform_data {
  * @hid: HID device pointer
  * @reg_lock: Mutex lock for reg access
  * @rw_lock: Mutex lock for read/write action
+ * @hid_ioctl_lock: Mutex lock for hid ioctl action
  * @zf_update_lock: Mutex lock for zero-flash FW update
  * @ic_data: IC information holder
  * @pdata: Platform data holder
  * @fw_info_table: Firmware information address table of firmware image
  * @hid_desc: HID descriptor
  * @hid_rd_data: HID report descriptor data
+ * @hid_info: HID information
+ * @hid_req_cfg: HID request configuration
+ * @fw_bin_desc: Firmware binary descriptor
  * @power_notif: Power change notifier
  * @himax_pwr_wq: Workqueue for power check
  * @work_pwr: Delayed work for power check
  * @initial_work: Delayed work for TP initialization
+ * @himax_hidraw_wq: Workqueue for hidraw
+ * @work_hid_update: Delayed work for hid update
  */
 struct himax_ts_data {
 	u8 latest_power_status;
@@ -495,6 +713,8 @@ struct himax_ts_data {
 	struct mutex reg_lock;
 	/* lock for bus read/write action */
 	struct mutex rw_lock;
+	/* lock for hidraw ioctl request */
+	struct mutex hid_ioctl_lock;
 	/* lock for zero-flash FW update */
 	struct mutex zf_update_lock;
 	struct himax_ic_data ic_data;
@@ -502,9 +722,14 @@ struct himax_ts_data {
 	struct himax_fw_address_table fw_info_table;
 	struct himax_hid_desc hid_desc;
 	struct himax_hid_rd_data hid_rd_data;
+	struct himax_hid_info hid_info;
+	struct himax_hid_req_cfg hid_req_cfg;
+	struct himax_bin_desc fw_bin_desc;
 	struct notifier_block power_notif;
 	struct workqueue_struct *himax_pwr_wq;
 	struct delayed_work work_pwr;
 	struct delayed_work initial_work;
+	struct workqueue_struct *himax_hidraw_wq;
+	struct delayed_work work_hid_update;
 };
 #endif
