@@ -1379,6 +1379,7 @@ static int himax_mcu_power_on_init(struct himax_ts_data *ts)
 {
 	int ret;
 	u32 retry_cnt;
+	const u32 hw_reset = 0x02;
 	const u32 retry_limit = 30;
 	union himax_dword_data data;
 
@@ -1419,6 +1420,19 @@ static int himax_mcu_power_on_init(struct himax_ts_data *ts)
 
 	dev_info(ts->dev, "%s: waiting for FW reload data\n", __func__);
 	for (retry_cnt = 0; retry_cnt < retry_limit; retry_cnt++) {
+		ret = himax_mcu_register_read(ts, HIMAX_REG_ADDR_RESET_FLAG, data.byte, 4);
+		if (ret < 0) {
+			dev_err(ts->dev, "%s: read reset flag fail\n", __func__);
+			return ret;
+		}
+
+		/* when reset flag not expected, return EAGAIN for retry */
+		if (data.dword != hw_reset) {
+			dev_err(ts->dev, "%s: abnormal reset happened, need to reload FW\n",
+				__func__);
+			return -EAGAIN;
+		}
+
 		ret = himax_mcu_register_read(ts, HIMAX_DSRAM_ADDR_2ND_FLASH_RELOAD, data.byte, 4);
 		if (ret < 0) {
 			dev_err(ts->dev, "%s: read FW reload status fail\n", __func__);
@@ -1431,6 +1445,7 @@ static int himax_mcu_power_on_init(struct himax_ts_data *ts)
 			break;
 		}
 		dev_info(ts->dev, "%s: wait FW reload %u times\n", __func__, retry_cnt + 1);
+
 		ret = himax_mcu_read_FW_status(ts);
 		if (ret < 0)
 			dev_err(ts->dev, "%s: read FW status fail\n", __func__);
@@ -2467,6 +2482,8 @@ static int himax_mcu_firmware_update_zf(const struct firmware *fw, struct himax_
 static int himax_zf_reload_from_file(char *file_name, struct himax_ts_data *ts)
 {
 	int ret;
+	u32 fw_load_cnt;
+	const u32 fw_load_limit = 3;
 	const struct firmware *fw;
 
 	if (!mutex_trylock(&ts->zf_update_lock)) {
@@ -2478,20 +2495,29 @@ static int himax_zf_reload_from_file(char *file_name, struct himax_ts_data *ts)
 	ret = request_firmware(&fw, file_name, ts->dev);
 	if (ret < 0) {
 		dev_err(ts->dev, "%s: request firmware fail, code[%d]!!\n", __func__, ret);
-		goto load_firmware_error;
+		goto request_firmware_error;
 	}
 
-	ret = himax_mcu_firmware_update_zf(fw, ts);
-	release_firmware(fw);
-	if (ret < 0)
-		goto load_firmware_error;
+	for (fw_load_cnt = 0; fw_load_cnt < fw_load_limit; fw_load_cnt++) {
+		ret = himax_mcu_firmware_update_zf(fw, ts);
+		if (ret < 0)
+			goto load_firmware_error;
 
-	ret = himax_disable_fw_reload(ts);
-	if (ret < 0)
-		goto load_firmware_error;
-	ret = himax_mcu_power_on_init(ts);
+		ret = himax_disable_fw_reload(ts);
+		if (ret < 0)
+			goto disable_fw_reload_error;
 
+		ret = himax_mcu_power_on_init(ts);
+		if (ret == -EAGAIN)
+			dev_err(ts->dev, "%s: initialize error, try reload FW.\n", __func__);
+		else
+			break;
+	}
+
+disable_fw_reload_error:
 load_firmware_error:
+	release_firmware(fw);
+request_firmware_error:
 	mutex_unlock(&ts->zf_update_lock);
 
 	return ret;
@@ -4086,7 +4112,9 @@ static void himax_initial_work(struct work_struct *work)
 						initial_work.work);
 	int ret;
 	bool fw_load_status;
+	u32 fw_load_cnt;
 	const u32 fw_bin_header_sz = 1024;
+	const u32 fw_load_retry_limit = 3;
 
 	ts->ic_boot_done = false;
 	if (ts->hid_req_cfg.fw) {
@@ -4109,17 +4137,25 @@ static void himax_initial_work(struct work_struct *work)
 		goto err_load_bin_descriptor;
 	}
 
-	if (himax_update_fw(ts)) {
-		dev_err(ts->dev, "%s: Update FW fail\n", __func__);
-		goto err_update_fw_failed;
-	}
+	for (fw_load_cnt = 0; fw_load_cnt < fw_load_retry_limit; fw_load_cnt++) {
+		if (himax_update_fw(ts)) {
+			dev_err(ts->dev, "%s: Update FW fail\n", __func__);
+			goto err_update_fw_failed;
+		}
 
-	dev_info(ts->dev, "%s: Update FW success\n", __func__);
-	/* write flag to sram to stop fw reload again. */
-	if (himax_disable_fw_reload(ts))
-		goto err_disable_fw_reload;
-	if (himax_mcu_power_on_init(ts))
-		goto err_power_on_init;
+		dev_info(ts->dev, "%s: Update FW success\n", __func__);
+		/* write flag to sram to stop fw reload again. */
+		if (himax_disable_fw_reload(ts))
+			goto err_disable_fw_reload;
+
+		ret = himax_mcu_power_on_init(ts);
+		if (ret == -EAGAIN)
+			dev_err(ts->dev, "%s: initialize failed, reload FW again\n", __func__);
+		else if (ret < 0)
+			goto err_power_on_init;
+		else
+			break;
+	}
 	/* get hid descriptors */
 	if (!ts->fw_info_table.addr_hid_desc) {
 		dev_err(ts->dev, "%s: No HID descriptor! Wrong FW!\n", __func__);
