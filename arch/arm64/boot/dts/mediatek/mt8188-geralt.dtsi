@@ -1404,6 +1404,8 @@
 
 		cbas {
 			compatible = "google,cros-cbas";
+			disable-whisker-input;
+			hid-i2c-tp = <&trackpad>;
 		};
 	};
 };
