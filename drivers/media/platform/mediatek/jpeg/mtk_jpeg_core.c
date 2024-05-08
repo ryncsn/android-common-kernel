@@ -1658,6 +1658,9 @@ retry_select:
 	jpeg_dst_buf->frame_num = ctx->total_frame_num;
 	ctx->total_frame_num++;
 	mtk_jpeg_enc_reset(comp_jpeg[hw_id]->reg_base);
+#if IS_ENABLED(CONFIG_ARM_SMMU_V3)
+	mtk_jpeg_enc_set_smmu_sid(comp_jpeg[hw_id]->dev, hw_id);
+#endif
 	mtk_jpeg_set_enc_dst(ctx,
 			     comp_jpeg[hw_id]->reg_base,
 			     &dst_buf->vb2_buf);
@@ -1774,6 +1777,9 @@ retry_select:
 	spin_lock_irqsave(&comp_jpeg[hw_id]->hw_lock, flags);
 	ctx->total_frame_num++;
 	mtk_jpeg_dec_reset(comp_jpeg[hw_id]->reg_base);
+#if IS_ENABLED(CONFIG_ARM_SMMU_V3)
+	mtk_jpeg_dec_set_smmu_sid(comp_jpeg[hw_id]->dev, hw_id);
+#endif
 	mtk_jpeg_dec_set_config(comp_jpeg[hw_id]->reg_base,
 				&jpeg_src_buf->dec_param,
 				jpeg_src_buf->bs_size,

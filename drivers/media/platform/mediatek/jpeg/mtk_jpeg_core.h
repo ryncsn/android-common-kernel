@@ -34,6 +34,18 @@
 
 #define MTK_JPEG_MAX_EXIF_SIZE	(64 * 1024)
 
+#define JPG_REG_CORE0_GUSER_ID				0x380d0000
+#define JPG_REG_CORE1_GUSER_ID				0x388d0000
+#define JPG_REG_GUSER_ID_MASK				0x7
+#define JPG_REG_GUSER_ID_DEC_SID			0x4
+#define JPG_REG_GUSER_ID_ENC_SID			0x5
+#define JPG_REG_DEC_GUSER_ID_SHIFT			8
+#define JPG_REG_ENC_GUSER_ID_SHIFT			4
+#define GUSER_ID_MAPRANGE					4
+
+
+
+
 /**
  * enum mtk_jpeg_ctx_state - states of the context state machine
  * @MTK_JPEG_INIT:		current state is initialized

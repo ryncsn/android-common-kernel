@@ -77,5 +77,6 @@ void mtk_jpeg_dec_set_config(void __iomem *base,
 			     struct mtk_jpeg_fb *fb);
 void mtk_jpeg_dec_reset(void __iomem *dec_reg_base);
 void mtk_jpeg_dec_start(void __iomem *dec_reg_base);
+void mtk_jpeg_dec_set_smmu_sid(struct device *dev, int hwid);
 
 #endif /* _MTK_JPEG_HW_H */

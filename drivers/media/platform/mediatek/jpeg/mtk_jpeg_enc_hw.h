@@ -87,5 +87,6 @@ void mtk_jpeg_set_enc_src(struct mtk_jpeg_ctx *ctx,  void __iomem *base,
 void mtk_jpeg_set_enc_dst(struct mtk_jpeg_ctx *ctx, void __iomem *base,
 			  struct vb2_buffer *dst_buf);
 void mtk_jpeg_set_enc_params(struct mtk_jpeg_ctx *ctx,  void __iomem *base);
+void mtk_jpeg_enc_set_smmu_sid(struct device *dev, int hwid);
 
 #endif /* _MTK_JPEG_ENC_HW_H */

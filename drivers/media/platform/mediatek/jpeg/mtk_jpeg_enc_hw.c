@@ -65,6 +65,30 @@ void mtk_jpeg_enc_reset(void __iomem *base)
 }
 EXPORT_SYMBOL_GPL(mtk_jpeg_enc_reset);
 
+void mtk_jpeg_enc_set_smmu_sid(struct device *dev, int hwid)
+{
+	void __iomem *enc_reg_base;
+	u32 val, mask;
+
+	if (hwid)
+		enc_reg_base = ioremap(JPG_REG_CORE1_GUSER_ID, GUSER_ID_MAPRANGE);
+	else
+		enc_reg_base = ioremap(JPG_REG_CORE0_GUSER_ID, GUSER_ID_MAPRANGE);
+	if (!enc_reg_base) {
+		dev_err(dev, "Failed to map hardware address JPG_REG_GUSER_ID\n");
+		return;
+	}
+
+	val = ioread32(enc_reg_base);
+	mask = ~(JPG_REG_GUSER_ID_MASK << JPG_REG_ENC_GUSER_ID_SHIFT);
+	val &= mask;
+	val |= (JPG_REG_GUSER_ID_ENC_SID << JPG_REG_ENC_GUSER_ID_SHIFT);
+
+	iowrite32(val, enc_reg_base);
+	iounmap(enc_reg_base);
+}
+EXPORT_SYMBOL_GPL(mtk_jpeg_enc_set_smmu_sid);
+
 u32 mtk_jpeg_enc_get_file_size(void __iomem *base)
 {
 	return readl(base + JPEG_ENC_DMA_ADDR0) -
@@ -286,7 +310,7 @@ static irqreturn_t mtk_jpegenc_hw_irq_handler(int irq, void *priv)
 	buf_state = VB2_BUF_STATE_DONE;
 	v4l2_m2m_buf_done(src_buf, buf_state);
 	mtk_jpegenc_put_buf(jpeg);
-	pm_runtime_put(ctx->jpeg->dev);
+	pm_runtime_put(jpeg->dev);
 	clk_disable_unprepare(jpeg->venc_clk.clks->clk);
 
 	jpeg->hw_state = MTK_JPEG_HW_IDLE;
