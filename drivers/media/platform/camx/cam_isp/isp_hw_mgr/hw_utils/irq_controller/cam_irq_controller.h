@@ -19,6 +19,19 @@
 #define CAM_IRQ_BITS_PER_REGISTER      32
 
 /*
+ * enum cam_irq_controller_type:
+ * @Brief:                  Controller type for IRQ events.
+ *                          CONTROLLER_VFE
+ *                          CONTROLLER_VFE_BUS
+ *
+ */
+enum cam_irq_controller_type {
+	CAM_IRQ_CONTROLLER_VFE,
+	CAM_IRQ_CONTROLLER_VFE_BUS,
+	CAM_IRQ_CONTROLLER_MAX,
+};
+
+/*
  * enum cam_irq_priority_level:
  * @Brief:                  Priority levels for IRQ events.
  *                          Priority_0 events will be serviced before
@@ -177,7 +190,8 @@ int cam_irq_controller_subscribe_irq(void *irq_controller,
 	CAM_IRQ_HANDLER_TOP_HALF           top_half_handler,
 	CAM_IRQ_HANDLER_BOTTOM_HALF        bottom_half_handler,
 	void                              *bottom_half,
-	struct cam_irq_bh_api             *irq_bh_api);
+	struct cam_irq_bh_api             *irq_bh_api,
+	enum cam_irq_controller_type       controller_type);
 
 /*
  * cam_irq_controller_unsubscribe_irq()
@@ -192,7 +206,7 @@ int cam_irq_controller_subscribe_irq(void *irq_controller,
  *                       Negative: Failure
  */
 int cam_irq_controller_unsubscribe_irq(void *irq_controller,
-	uint32_t handle);
+	uint32_t handle, enum cam_irq_controller_type controller_type);
 
 /*
  * cam_irq_controller_deinit()
@@ -225,6 +239,8 @@ int cam_irq_controller_deinit(void **irq_controller);
  * @return:             IRQ_HANDLED/IRQ_NONE
  */
 irqreturn_t cam_irq_controller_handle_irq(int irq_num, void *priv);
+
+irqreturn_t cam_vfe_bus_controller_handle_irq(int irq_num, void *priv);
 
 /*
  * cam_irq_controller_disable_irq()

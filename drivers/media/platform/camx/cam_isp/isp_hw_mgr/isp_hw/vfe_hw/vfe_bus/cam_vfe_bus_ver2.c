@@ -1177,7 +1177,7 @@ static int cam_vfe_bus_start_wm(struct cam_isp_resource_node *wm_res)
 			bus_irq_reg_mask, wm_res,
 			wm_res->top_half_handler,
 			cam_ife_mgr_do_tasklet_buf_done,
-			wm_res->tasklet_info, &tasklet_bh_api);
+			wm_res->tasklet_info, &tasklet_bh_api, CAM_IRQ_CONTROLLER_VFE_BUS);
 		if (wm_res->irq_handle < 0) {
 			CAM_ERR(CAM_ISP, "Subscribe IRQ failed for WM %d",
 				rsrc_data->index);
@@ -1262,7 +1262,8 @@ static int cam_vfe_bus_stop_wm(struct cam_isp_resource_node *wm_res)
 	if (rsrc_data->irq_enabled)
 		rc = cam_irq_controller_unsubscribe_irq(
 			common_data->bus_irq_controller,
-			wm_res->irq_handle);
+			wm_res->irq_handle,
+			CAM_IRQ_CONTROLLER_VFE_BUS);
 
 	wm_res->res_state = CAM_ISP_RESOURCE_STATE_RESERVED;
 
@@ -1988,7 +1989,7 @@ static int cam_vfe_bus_start_comp_grp(struct cam_isp_resource_node *comp_grp)
 			bus_irq_reg_mask, comp_grp,
 			comp_grp->top_half_handler,
 			cam_ife_mgr_do_tasklet_buf_done,
-			comp_grp->tasklet_info, &tasklet_bh_api);
+			comp_grp->tasklet_info, &tasklet_bh_api, CAM_IRQ_CONTROLLER_VFE_BUS);
 		if (comp_grp->irq_handle < 0) {
 			CAM_ERR(CAM_ISP, "Subscribe IRQ failed for comp_grp %d",
 				rsrc_data->comp_grp_type);
@@ -2016,7 +2017,8 @@ static int cam_vfe_bus_stop_comp_grp(struct cam_isp_resource_node *comp_grp)
 		rsrc_data->comp_grp_type <= CAM_VFE_BUS_VER2_COMP_GRP_5)) {
 		rc = cam_irq_controller_unsubscribe_irq(
 			common_data->bus_irq_controller,
-			comp_grp->irq_handle);
+			comp_grp->irq_handle,
+			CAM_IRQ_CONTROLLER_VFE_BUS);
 	}
 	comp_grp->res_state = CAM_ISP_RESOURCE_STATE_RESERVED;
 
@@ -2678,7 +2680,7 @@ static int cam_vfe_bus_ver2_handle_irq(uint32_t    evt_id,
 
 	bus_priv     = th_payload->handler_priv;
 	CAM_DBG(CAM_ISP, "Enter");
-	rc = cam_irq_controller_handle_irq(evt_id,
+	rc = cam_vfe_bus_controller_handle_irq(evt_id,
 		bus_priv->common_data.bus_irq_controller);
 	return (rc == IRQ_HANDLED) ? 0 : -EINVAL;
 }
@@ -3419,7 +3421,8 @@ static int cam_vfe_bus_init_hw(void *hw_priv,
 		cam_vfe_bus_ver2_handle_irq,
 		NULL,
 		NULL,
-		NULL);
+		NULL,
+		CAM_IRQ_CONTROLLER_VFE_BUS);
 
 	if ((int)bus_priv->irq_handle <= 0) {
 		CAM_ERR(CAM_ISP, "Failed to subscribe BUS IRQ");
@@ -3435,7 +3438,8 @@ static int cam_vfe_bus_init_hw(void *hw_priv,
 			cam_vfe_bus_error_irq_top_half,
 			cam_vfe_bus_err_bottom_half,
 			bus_priv->tasklet_info,
-			&tasklet_bh_api);
+			&tasklet_bh_api,
+			CAM_IRQ_CONTROLLER_VFE_BUS);
 
 		if ((int)bus_priv->error_irq_handle <= 0) {
 			CAM_ERR(CAM_ISP, "Failed to subscribe BUS error IRQ %d",
@@ -3480,7 +3484,8 @@ static int cam_vfe_bus_deinit_hw(void *hw_priv,
 	if (bus_priv->error_irq_handle) {
 		rc = cam_irq_controller_unsubscribe_irq(
 			bus_priv->common_data.bus_irq_controller,
-			bus_priv->error_irq_handle);
+			bus_priv->error_irq_handle,
+			CAM_IRQ_CONTROLLER_VFE_BUS);
 		if (rc)
 			CAM_ERR(CAM_ISP,
 				"Failed to unsubscribe error irq rc=%d", rc);
@@ -3491,7 +3496,8 @@ static int cam_vfe_bus_deinit_hw(void *hw_priv,
 	if (bus_priv->irq_handle) {
 		rc = cam_irq_controller_unsubscribe_irq(
 			bus_priv->common_data.vfe_irq_controller,
-			bus_priv->irq_handle);
+			bus_priv->irq_handle,
+			CAM_IRQ_CONTROLLER_VFE_BUS);
 		if (rc)
 			CAM_ERR(CAM_ISP,
 				"Failed to unsubscribe irq rc=%d", rc);
@@ -3547,7 +3553,8 @@ static int cam_vfe_bus_process_cmd(
 			CAM_DBG(CAM_ISP, "Mask off bus error irq handler");
 			rc = cam_irq_controller_unsubscribe_irq(
 				bus_priv->common_data.bus_irq_controller,
-				bus_priv->error_irq_handle);
+				bus_priv->error_irq_handle,
+				CAM_IRQ_CONTROLLER_VFE_BUS);
 			if (rc)
 				CAM_ERR(CAM_ISP,
 					"Failed to unsubscribe error irq rc=%d",
