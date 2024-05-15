@@ -4391,7 +4391,6 @@ static int himax_chip_suspend(struct himax_ts_data *ts)
 	himax_int_enable(ts, false);
 	gpiod_set_value(ts->pdata.gpiod_rst, 1);
 	himax_power_set(ts, false);
-	himax_hid_remove(ts);
 
 	return 0;
 }
@@ -4418,7 +4417,6 @@ static int himax_chip_resume(struct himax_ts_data *ts)
 	gpiod_set_value(ts->pdata.gpiod_rst, 0);
 	himax_resume_proc(ts);
 	if (ts->resume_succeeded) {
-		himax_hid_probe(ts);
 		himax_int_enable(ts, true);
 	} else {
 		dev_err(ts->dev, "%s: resume failed!\n", __func__);
