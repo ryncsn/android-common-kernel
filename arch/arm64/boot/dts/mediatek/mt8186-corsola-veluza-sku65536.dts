@@ -7,8 +7,9 @@
 #include "mt8186-corsola-veluza.dtsi"
 
 / {
-	model = "Google veluza sku65536/65537 board";
+	model = "Google veluza sku65536/65537/65542/65543 board";
 	compatible = "google,veluza-sku65536", "google,veluza-sku65537",
+		     "google,veluza-sku65542", "google,veluza-sku65543",
 		     "google,veluza", "google,corsola", "mediatek,mt8186";
 };
 
