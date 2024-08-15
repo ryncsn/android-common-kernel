@@ -956,6 +956,92 @@ config COMMON_CLK_MT8195_VENCSYS
 	help
 	  This driver supports MediaTek MT8195 vencsys clocks.
 
+config COMMON_CLK_MT8196
+	tristate "Clock driver for MediaTek MT8196"
+	depends on ARM64 || COMPILE_TEST
+	select COMMON_CLK_MEDIATEK
+	default MACH_MT8196
+	help
+	  This driver supports MediaTek MT8196 basic clocks.
+
+config COMMON_CLK_MT8196_ADSP
+	tristate "Clock driver for MediaTek MT8196 adsp"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 adsp clocks
+
+config COMMON_CLK_MT8196_APIFRBUS
+	tristate "Clock driver for MediaTek MT8196 apifrbus"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 apifrbus clocks
+
+config COMMON_CLK_MT8196_CAMSYS
+	tristate "Clock driver for MediaTek MT8196 camsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 camsys clocks.
+
+config COMMON_CLK_MT8196_IMGSYS
+	tristate "Clock driver for MediaTek MT8196 imgsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 imgsys clocks.
+
+config COMMON_CLK_MT8196_IMP_IIC_WRAP
+	tristate "Clock driver for MediaTek MT8196 imp_iic_wrap"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 i2c clocks.
+
+config COMMON_CLK_MT8196_MCUSYS
+	tristate "Clock driver for MediaTek MT8196 mcusys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 mcusys clocks.
+
+config COMMON_CLK_MT8196_MDPSYS
+	tristate "Clock driver for MediaTek MT8196 mdpsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 mdpsys clocks.
+
+config COMMON_CLK_MT8196_MFGCFG
+	tristate "Clock driver for MediaTek MT8196 mfgcfg"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 mfgcfg clocks.
+
+config COMMON_CLK_MT8196_MMSYS
+	tristate "Clock driver for MediaTek MT8196 mmsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 mmsys clocks.
+
+config COMMON_CLK_MT8196_PEXTPSYS
+	tristate "Clock driver for MediaTek MT8196 pextpsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 pextpsys clocks.
+
+config COMMON_CLK_MT8196_VDECSYS
+	tristate "Clock driver for MediaTek MT8196 vdecsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 vdecsys clocks.
+
+config COMMON_CLK_MT8196_VENCSYS
+	tristate "Clock driver for MediaTek MT8196 vencsys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 vencsys clocks.
+
+config COMMON_CLK_MT8196_UFSSYS
+	tristate "Clock driver for MediaTek MT8196 ufssys"
+	depends on COMMON_CLK_MT8196
+	help
+	  This driver supports MediaTek MT8196 ufssys clocks.
+
 config COMMON_CLK_MT8365
 	tristate "Clock driver for MediaTek MT8365"
 	depends on ARCH_MEDIATEK || COMPILE_TEST
