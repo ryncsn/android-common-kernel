@@ -1252,6 +1252,10 @@ static const struct platform_desc bmg_desc = {
 	PLATFORM(BATTLEMAGE),
 };
 
+static const struct platform_desc ptl_desc = {
+	PLATFORM(PANTHERLAKE),
+};
+
 __diag_pop();
 
 /*
@@ -1321,6 +1325,7 @@ static const struct {
 	INTEL_MTL_IDS(INTEL_DISPLAY_DEVICE, &mtl_desc),
 	INTEL_LNL_IDS(INTEL_DISPLAY_DEVICE, &lnl_desc),
 	INTEL_BMG_IDS(INTEL_DISPLAY_DEVICE, &bmg_desc),
+	INTEL_PTL_IDS(INTEL_DISPLAY_DEVICE, &ptl_desc),
 };
 
 static const struct {
@@ -1331,6 +1336,7 @@ static const struct {
 	{ 14,  0, &xe_lpdp_display },
 	{ 14,  1, &xe2_hpd_display },
 	{ 20,  0, &xe2_lpd_display },
+	{ 30,  0, &xe2_lpd_display },
 };
 
 static const struct intel_display_device_info *
