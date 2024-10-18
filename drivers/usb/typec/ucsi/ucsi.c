@@ -670,6 +670,11 @@ static int ucsi_get_pdos(struct ucsi_connector *con, enum typec_role role,
 static int ucsi_get_src_pdos(struct ucsi_connector *con)
 {
 	int ret;
+	enum typec_role cur_role;
+
+	cur_role = !!(con->status.flags & UCSI_CONSTAT_PWR_DIR);
+	if (is_source(cur_role))
+		return 0;
 
 	ret = ucsi_get_pdos(con, TYPEC_SOURCE, 1, con->src_pdos);
 	if (ret < 0)
@@ -697,6 +702,15 @@ static struct usb_power_delivery_capabilities *ucsi_get_pd_caps(struct ucsi_conn
 		pd_caps.pdo[ret] = 0;
 
 	pd_caps.role = role;
+
+	/* Check for DRP partner */
+	for (int i = 0; i < ret; i++) {
+		if (pdo_type(pd_caps.pdo[i]) == PDO_TYPE_FIXED &&
+		    pd_caps.pdo[i] & PDO_FIXED_DUAL_ROLE) {
+			con->drp_partner = true;
+			break;
+		}
+	}
 
 	return usb_power_delivery_register_capabilities(is_partner ? con->partner_pd : con->pd,
 							&pd_caps);
@@ -831,6 +845,7 @@ static int ucsi_register_partner_pdos(struct ucsi_connector *con)
 {
 	struct usb_power_delivery_desc desc = { con->ucsi->cap.pd_version };
 	struct usb_power_delivery_capabilities *cap;
+	enum typec_role cur_role;
 
 	if (con->partner_pd)
 		return 0;
@@ -839,18 +854,36 @@ static int ucsi_register_partner_pdos(struct ucsi_connector *con)
 	if (IS_ERR(con->partner_pd))
 		return PTR_ERR(con->partner_pd);
 
-	cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
-	if (IS_ERR(cap))
-	    return PTR_ERR(cap);
+	cur_role = !!(con->status.flags & UCSI_CONSTAT_PWR_DIR);
+	if (is_source(cur_role)) {
+		cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
+		if (IS_ERR(cap))
+			return PTR_ERR(cap);
 
-	con->partner_source_caps = cap;
+		con->partner_sink_caps = cap;
+		if (con->drp_partner) {
+			cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
+			if (IS_ERR(cap))
+				return PTR_ERR(cap);
 
-	cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
-	if (IS_ERR(cap))
-	    return PTR_ERR(cap);
+			con->partner_source_caps = cap;
+		}
+	} else {
+		cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
+		if (IS_ERR(cap))
+			return PTR_ERR(cap);
 
-	con->partner_sink_caps = cap;
+		con->partner_source_caps = cap;
+		if (con->drp_partner) {
+			cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
+			if (IS_ERR(cap))
+				return PTR_ERR(cap);
 
+			con->partner_sink_caps = cap;
+		}
+	}
+
+	ucsi_port_psy_changed(con);
 	return typec_partner_set_usb_power_delivery(con->partner, con->partner_pd);
 }
 
@@ -862,6 +895,9 @@ static void ucsi_unregister_partner_pdos(struct ucsi_connector *con)
 	con->partner_source_caps = NULL;
 	usb_power_delivery_unregister(con->partner_pd);
 	con->partner_pd = NULL;
+	memset(con->src_pdos, 0, sizeof(con->src_pdos[0])*PDO_MAX_OBJECTS);
+	con->num_pdos = 0;
+	con->drp_partner = false;
 }
 
 static int ucsi_register_plug(struct ucsi_connector *con)
