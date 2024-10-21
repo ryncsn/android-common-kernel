@@ -841,52 +841,6 @@ static int ucsi_check_altmodes(struct ucsi_connector *con)
 	return ret;
 }
 
-static int ucsi_register_partner_pdos(struct ucsi_connector *con)
-{
-	struct usb_power_delivery_desc desc = { con->ucsi->cap.pd_version };
-	struct usb_power_delivery_capabilities *cap;
-	enum typec_role cur_role;
-
-	if (con->partner_pd)
-		return 0;
-
-	con->partner_pd = typec_partner_usb_power_delivery_register(con->partner, &desc);
-	if (IS_ERR(con->partner_pd))
-		return PTR_ERR(con->partner_pd);
-
-	cur_role = !!(con->status.flags & UCSI_CONSTAT_PWR_DIR);
-	if (is_source(cur_role)) {
-		cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
-		if (IS_ERR(cap))
-			return PTR_ERR(cap);
-
-		con->partner_sink_caps = cap;
-		if (con->drp_partner) {
-			cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
-			if (IS_ERR(cap))
-				return PTR_ERR(cap);
-
-			con->partner_source_caps = cap;
-		}
-	} else {
-		cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
-		if (IS_ERR(cap))
-			return PTR_ERR(cap);
-
-		con->partner_source_caps = cap;
-		if (con->drp_partner) {
-			cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
-			if (IS_ERR(cap))
-				return PTR_ERR(cap);
-
-			con->partner_sink_caps = cap;
-		}
-	}
-
-	ucsi_port_psy_changed(con);
-	return typec_partner_set_usb_power_delivery(con->partner, con->partner_pd);
-}
-
 static void ucsi_unregister_partner_pdos(struct ucsi_connector *con)
 {
 	usb_power_delivery_unregister_capabilities(con->partner_sink_caps);
@@ -895,9 +849,67 @@ static void ucsi_unregister_partner_pdos(struct ucsi_connector *con)
 	con->partner_source_caps = NULL;
 	usb_power_delivery_unregister(con->partner_pd);
 	con->partner_pd = NULL;
-	memset(con->src_pdos, 0, sizeof(con->src_pdos[0])*PDO_MAX_OBJECTS);
-	con->num_pdos = 0;
-	con->drp_partner = false;
+}
+
+static int ucsi_register_partner_pdos(struct ucsi_connector *con)
+{
+	struct usb_power_delivery_desc desc = { con->ucsi->cap.pd_version };
+	struct usb_power_delivery_capabilities *cap;
+	enum typec_role cur_role;
+	int ret;
+
+	if (con->partner_pd)
+		return 0;
+
+	con->partner_pd = typec_partner_usb_power_delivery_register(con->partner, &desc);
+	if (IS_ERR(con->partner_pd)) {
+		ret = PTR_ERR(con->partner_pd);
+		goto err_pd_caps;
+	}
+
+	cur_role = !!(con->status.flags & UCSI_CONSTAT_PWR_DIR);
+	if (is_source(cur_role)) {
+		cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
+		if (IS_ERR(cap)) {
+			ret = PTR_ERR(cap);
+			goto err_pd_caps;
+		}
+
+		con->partner_sink_caps = cap;
+		if (con->drp_partner) {
+			cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
+			if (IS_ERR(cap)) {
+				ret = PTR_ERR(cap);
+				goto err_pd_caps;
+			}
+
+			con->partner_source_caps = cap;
+		}
+	} else {
+		cap = ucsi_get_pd_caps(con, TYPEC_SOURCE, true);
+		if (IS_ERR(cap)) {
+			ret = PTR_ERR(cap);
+			goto err_pd_caps;
+		}
+
+		con->partner_source_caps = cap;
+		if (con->drp_partner) {
+			cap = ucsi_get_pd_caps(con, TYPEC_SINK, true);
+			if (IS_ERR(cap)) {
+				ret = PTR_ERR(cap);
+				goto err_pd_caps;
+			}
+
+			con->partner_sink_caps = cap;
+		}
+	}
+
+	ucsi_port_psy_changed(con);
+	return typec_partner_set_usb_power_delivery(con->partner, con->partner_pd);
+
+err_pd_caps:
+	ucsi_unregister_partner_pdos(con);
+	return ret;
 }
 
 static int ucsi_register_plug(struct ucsi_connector *con)
@@ -984,7 +996,7 @@ static void ucsi_pwr_opmode_change(struct ucsi_connector *con)
 		typec_set_pwr_opmode(con->port, TYPEC_PWR_MODE_PD);
 		ucsi_partner_task(con, ucsi_get_src_pdos, 30, 0);
 		ucsi_partner_task(con, ucsi_check_altmodes, 30, HZ);
-		ucsi_partner_task(con, ucsi_register_partner_pdos, 1, HZ);
+		ucsi_partner_task(con, ucsi_register_partner_pdos, 30, HZ);
 		break;
 	case UCSI_CONSTAT_PWR_OPMODE_TYPEC1_5:
 		con->rdo = 0;
@@ -1053,6 +1065,9 @@ static void ucsi_unregister_partner(struct ucsi_connector *con)
 	ucsi_unregister_cable(con);
 	typec_unregister_partner(con->partner);
 	memset(&con->partner_identity, 0, sizeof(con->partner_identity));
+	memset(con->src_pdos, 0, sizeof(con->src_pdos[0])*PDO_MAX_OBJECTS);
+	con->num_pdos = 0;
+	con->drp_partner = false;
 	con->partner = NULL;
 }
 
