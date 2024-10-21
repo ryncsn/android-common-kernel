@@ -369,6 +369,8 @@
 };
 
 &gpu {
+	/* supply-names is required by the proprietary Mali driver. */
+	supply-names = "mali";
 	mali-supply = <&mt6366_vgpu_reg>;
 	status = "okay";
 };
