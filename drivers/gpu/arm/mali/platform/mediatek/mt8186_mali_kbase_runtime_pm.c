@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2021 Mediatek Inc.
 
+#include <linux/version.h>
 #include "mali_kbase_config_platform.h"
 #include "mali_kbase_runtime_pm.h"
 
 /* list of clocks required by GPU */
 static const char * const mt8186_gpu_clks[] = {
+#if (KERNEL_VERSION(6, 4, 0) > LINUX_VERSION_CODE)
+	/* Our old downstream code defines many clocks */
 	"clk_mux",
 	"clk_main_parent",
 	"clk_sub_parent",
 	"subsys_mfg_cg",
 	"clk_pll_src",
+#else
+	/* Upstream binding only uses one clock */
+	NULL,
+#endif
 };
 
 const struct mtk_hw_config mt8186_hw_config = {
@@ -37,7 +44,14 @@ const struct mtk_hw_config mt8186_hw_config = {
 };
 
 struct mtk_platform_context mt8186_platform_context = {
+#if (KERNEL_VERSION(6, 4, 0) > LINUX_VERSION_CODE)
+	/*
+	 * Since v6.2 all the auto-reparenting code has been merged.
+	 * GPU binding was merged in v6.4. Regulator coupler was merged
+	 * in v6.3.
+	 */
 	.manual_mux_reparent = true,
+#endif
 	.config = &mt8186_hw_config,
 };
 
@@ -55,7 +69,7 @@ static int platform_init(struct kbase_device *kbdev)
 #if IS_ENABLED(CONFIG_MALI_DEVFREQ)
 	kbdev->devfreq_ops.set_frequency = mtk_set_frequency;
 	kbdev->devfreq_ops.voltage_range_check = mtk_voltage_range_check;
-#if IS_ENABLED(CONFIG_REGULATOR)
+#if (KERNEL_VERSION(6, 4, 0) > LINUX_VERSION_CODE) && IS_ENABLED(CONFIG_REGULATOR)
 	kbdev->devfreq_ops.set_voltages = mtk_set_voltages;
 #endif
 #endif
