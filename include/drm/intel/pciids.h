@@ -22,8 +22,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-#ifndef _I915_PCIIDS_H
-#define _I915_PCIIDS_H
+#ifndef __PCIIDS_H__
+#define __PCIIDS_H__
 
 /*
  * A pci_device_id struct {
@@ -823,4 +823,4 @@
 	MACRO__(0xB0A1, ## __VA_ARGS__), \
 	MACRO__(0xB0A2, ## __VA_ARGS__)
 
-#endif /* _I915_PCIIDS_H */
+#endif /* __PCIIDS_H__ */
