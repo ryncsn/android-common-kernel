@@ -221,17 +221,6 @@ DEFINE_STATIC_KEY_FALSE_RO(proc_mem_restrict_write_all);
 DEFINE_STATIC_KEY_FALSE_RO(proc_mem_restrict_write_ptracer);
 #endif
 
-#if IS_ENABLED(CONFIG_PROC_MEM_RESTRICT_FOLL_FORCE_ALL)
-DEFINE_STATIC_KEY_TRUE_RO(proc_mem_restrict_foll_force_all);
-DEFINE_STATIC_KEY_FALSE_RO(proc_mem_restrict_foll_force_ptracer);
-#elif IS_ENABLED(CONFIG_PROC_MEM_RESTRICT_FOLL_FORCE_PTRACE)
-DEFINE_STATIC_KEY_FALSE_RO(proc_mem_restrict_foll_force_all);
-DEFINE_STATIC_KEY_TRUE_RO(proc_mem_restrict_foll_force_ptracer);
-#else
-DEFINE_STATIC_KEY_FALSE_RO(proc_mem_restrict_foll_force_all);
-DEFINE_STATIC_KEY_FALSE_RO(proc_mem_restrict_foll_force_ptracer);
-#endif
-
 #define DEFINE_EARLY_PROC_MEM_RESTRICT(name)					\
 static int __init early_proc_mem_restrict_##name(char *buf)			\
 {										\
@@ -257,7 +246,6 @@ early_param("proc_mem.restrict_" #name, early_proc_mem_restrict_##name)
 DEFINE_EARLY_PROC_MEM_RESTRICT(open_read);
 DEFINE_EARLY_PROC_MEM_RESTRICT(open_write);
 DEFINE_EARLY_PROC_MEM_RESTRICT(write);
-DEFINE_EARLY_PROC_MEM_RESTRICT(foll_force);
 
 /*
  * Count the number of hardlinks for the pid_entry table, excluding the .
