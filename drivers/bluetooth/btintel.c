@@ -3129,7 +3129,8 @@ static int btintel_setup_combined(struct hci_dev *hdev)
 
 			err = btintel_bootloader_setup(hdev, &ver);
 			btintel_register_devcoredump_support(hdev);
-			hdev->wbs_pkt_len = 24;
+			if (ver.hw_variant == 0x0c)
+				hdev->wbs_pkt_len = 24;
 			break;
 		default:
 			bt_dev_err(hdev, "Unsupported Intel hw variant (%u)",
