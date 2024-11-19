@@ -1122,16 +1122,20 @@ static void mtk_jpeg_clk_on(struct mtk_jpeg_dev *jpeg)
 {
 	int ret;
 
-	ret = clk_bulk_prepare_enable(jpeg->variant->num_clks,
-				      jpeg->variant->clks);
-	if (ret)
-		dev_err(jpeg->dev, "Failed to open jpeg clk: %d\n", ret);
+	if (!jpeg->variant->multi_core) {
+		ret = clk_bulk_prepare_enable(jpeg->variant->num_clks,
+					      jpeg->variant->clks);
+		if (ret)
+			dev_err(jpeg->dev, "Failed to open jpeg clk: %d\n", ret);
+	}
 }
 
 static void mtk_jpeg_clk_off(struct mtk_jpeg_dev *jpeg)
 {
-	clk_bulk_disable_unprepare(jpeg->variant->num_clks,
-				   jpeg->variant->clks);
+	if (!jpeg->variant->multi_core) {
+		clk_bulk_disable_unprepare(jpeg->variant->num_clks,
+					   jpeg->variant->clks);
+	}
 }
 
 static void mtk_jpeg_set_default_params(struct mtk_jpeg_ctx *ctx)
@@ -1659,13 +1663,6 @@ retry_select:
 		goto enc_end;
 	}
 
-	ret = clk_prepare_enable(comp_jpeg[hw_id]->venc_clk.clks->clk);
-	if (ret) {
-		dev_err(jpeg->dev, "%s : %d, jpegenc clk_prepare_enable fail\n",
-			__func__, __LINE__);
-		goto enc_end;
-	}
-
 	schedule_delayed_work(&comp_jpeg[hw_id]->job_timeout_work,
 			      msecs_to_jiffies(MTK_JPEG_HW_TIMEOUT_MSEC));
 
@@ -1763,25 +1760,18 @@ retry_select:
 		goto getbuf_fail;
 
 	mtk_jpegdec_set_hw_param(ctx, hw_id, src_buf, dst_buf);
-	ret = pm_runtime_get_sync(comp_jpeg[hw_id]->dev);
+	ret = pm_runtime_resume_and_get(comp_jpeg[hw_id]->dev);
 	if (ret < 0) {
 		dev_err(jpeg->dev, "%s : %d, pm_runtime_get_sync fail !!!\n",
 			__func__, __LINE__);
 		goto dec_end;
 	}
 
-	ret = clk_prepare_enable(comp_jpeg[hw_id]->jdec_clk.clks->clk);
-	if (ret) {
-		dev_err(jpeg->dev, "%s : %d, jpegdec clk_prepare_enable fail\n",
-			__func__, __LINE__);
-		goto clk_end;
-	}
-
 	mtk_jpeg_set_dec_src(ctx, &src_buf->vb2_buf, &bs);
 	if (mtk_jpeg_set_dec_dst(ctx,
 				 &jpeg_src_buf->dec_param,
 				 &dst_buf->vb2_buf, &fb))
-		goto setdst_end;
+		goto set_dst_fail;
 
 	schedule_delayed_work(&comp_jpeg[hw_id]->job_timeout_work,
 			      msecs_to_jiffies(MTK_JPEG_HW_TIMEOUT_MSEC));
@@ -1810,9 +1800,7 @@ retry_select:
 
 	return;
 
-setdst_end:
-	clk_disable_unprepare(comp_jpeg[hw_id]->jdec_clk.clks->clk);
-clk_end:
+set_dst_fail:
 	pm_runtime_put(comp_jpeg[hw_id]->dev);
 dec_end:
 	v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx);
