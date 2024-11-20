@@ -1208,6 +1208,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_PV_SCHED	600
 
 #define KVM_CAP_ARM_PROTECTED_VM 0xffbadab1
+#define KVM_CAP_X86_PROTECTED_VM 0xffbadab2
 
 #ifdef KVM_CAP_IRQ_ROUTING
 
