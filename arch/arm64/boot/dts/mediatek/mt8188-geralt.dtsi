@@ -677,6 +677,9 @@
 &pcie {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie_pins>;
+	pcie1v8-supply = <&mt6359_vcn18_ldo_reg>;
+	pcie3v3-supply = <&pp3300_wlan>;
+	dsc-reset-gpios = <&pio 145 1>;
 	status = "okay";
 
 	pcie@0,0 {
