@@ -703,6 +703,8 @@ struct intel_atomic_state {
 	struct i915_sw_fence commit_ready;
 
 	struct llist_node freed;
+
+	struct work_struct cleanup_work;
 };
 
 struct intel_plane_state {
