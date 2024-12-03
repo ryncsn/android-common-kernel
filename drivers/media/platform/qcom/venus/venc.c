@@ -1526,7 +1526,7 @@ err_m2m_release:
 err_session_destroy:
 	hfi_session_destroy(inst);
 err_ctrl_deinit:
-	v4l2_ctrl_handler_free(&inst->ctrl_handler);
+	venc_ctrl_deinit(inst);
 err_free:
 	kfree(inst);
 	return ret;
@@ -1537,8 +1537,28 @@ static int venc_close(struct file *file)
 	struct venus_inst *inst = to_inst(file);
 
 	venc_pm_get(inst);
-	venus_close_common(inst);
+
+	/*
+	 * First, remove the inst from the ->instances list, so that
+	 * to_instance() will return NULL.
+	 */
+	hfi_session_destroy(inst);
+	/*
+	 * Second, make sure we don't have IRQ/IRQ-thread currently running
+	 * or pending execution, which would race with the inst destruction.
+	 */
+	synchronize_irq(inst->core->irq);
+
+	v4l2_m2m_ctx_release(inst->m2m_ctx);
+	v4l2_m2m_release(inst->m2m_dev);
+	v4l2_fh_del(&inst->fh);
+	v4l2_fh_exit(&inst->fh);
+	venc_ctrl_deinit(inst);
+
 	inst->enc_state = VENUS_ENC_STATE_DEINIT;
+	mutex_destroy(&inst->lock);
+	mutex_destroy(&inst->ctx_q_lock);
+
 	venc_pm_put(inst, false);
 
 	kfree(inst);
