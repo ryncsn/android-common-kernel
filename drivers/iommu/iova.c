@@ -11,12 +11,15 @@
 #include <linux/smp.h>
 #include <linux/bitops.h>
 #include <linux/cpu.h>
-#include <trace/hooks/iommu.h>
+#include <linux/init.h>
 
 /* The anchor node sits above the top of the usable address space */
 #define IOVA_ANCHOR	~0UL
 
 #define IOVA_RANGE_CACHE_MAX_SIZE 6	/* log of max cached IOVA range size (in pages) */
+
+#define IOMMU_DEFAULT_IOVA_MAX_ALIGN_SHIFT	9
+static unsigned long iommu_max_align_shift __read_mostly = IOMMU_DEFAULT_IOVA_MAX_ALIGN_SHIFT;
 
 static bool iova_rcache_insert(struct iova_domain *iovad,
 			       unsigned long pfn,
@@ -31,6 +34,29 @@ unsigned long iova_rcache_range(void)
 {
 	return PAGE_SIZE << (IOVA_RANGE_CACHE_MAX_SIZE - 1);
 }
+
+static unsigned long limit_align_shift(struct iova_domain *iovad, unsigned long shift)
+{
+	unsigned long max_align_shift;
+
+	max_align_shift = iommu_max_align_shift + PAGE_SHIFT - iova_shift(iovad);
+	return min_t(unsigned long, max_align_shift, shift);
+}
+
+#ifndef MODULE
+static int __init iommu_set_def_max_align_shift(char *str)
+{
+	unsigned long max_align_shift;
+
+	int ret = kstrtoul(str, 10, &max_align_shift);
+
+	if (!ret)
+		iommu_max_align_shift = max_align_shift;
+
+	return 0;
+}
+early_param("iommu.max_align_shift", iommu_set_def_max_align_shift);
+#endif
 
 static int iova_cpuhp_dead(unsigned int cpu, struct hlist_node *node)
 {
@@ -188,11 +214,8 @@ static int __alloc_and_insert_iova_range(struct iova_domain *iovad,
 	unsigned long align_mask = ~0UL;
 	unsigned long high_pfn = limit_pfn, low_pfn = iovad->start_pfn;
 
-	if (size_aligned) {
-		unsigned long shift = fls_long(size - 1);
-		trace_android_rvh_iommu_limit_align_shift(iovad, size, &shift);
-		align_mask <<= shift;
-	}
+	if (size_aligned)
+		align_mask <<= limit_align_shift(iovad, fls_long(size - 1));
 
 	/* Walk the tree backwards */
 	spin_lock_irqsave(&iovad->iova_rbtree_lock, flags);
@@ -321,18 +344,14 @@ alloc_iova(struct iova_domain *iovad, unsigned long size,
 	bool size_aligned)
 {
 	struct iova *new_iova;
-	int ret = -1;
+	int ret;
 
 	new_iova = alloc_iova_mem();
 	if (!new_iova)
 		return NULL;
 
-	trace_android_rvh_iommu_alloc_insert_iova(iovad, size, limit_pfn + 1,
-			new_iova, size_aligned, &ret);
-	if (ret) {
-		ret = __alloc_and_insert_iova_range(iovad, size,
-			limit_pfn + 1, new_iova, size_aligned);
-	}
+	ret = __alloc_and_insert_iova_range(iovad, size, limit_pfn + 1,
+					new_iova, size_aligned);
 
 	if (ret) {
 		free_iova_mem(new_iova);
