@@ -10,6 +10,7 @@
 	model = "Google chinchou CZ1104FM2A/CZ1204FM2A";
 	compatible = "google,chinchou-sku16", "google,chinchou-sku18",
 			"google,chinchou-sku19", "google,chinchou-sku21",
+			"google,chinchou-sku2147483647",
 			"google,chinchou", "mediatek,mt8186";
 };
 
