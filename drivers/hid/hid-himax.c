@@ -5356,6 +5356,7 @@ static struct spi_driver himax_hid_over_spi_driver = {
 		.of_match_table = of_match_ptr(himax_table),
 #endif
 	},
+	.id_table =	himax_spi_id,
 	.probe =	himax_spi_drv_probe,
 	.remove =	himax_spi_drv_remove,
 	.shutdown =	himax_shutdown,
