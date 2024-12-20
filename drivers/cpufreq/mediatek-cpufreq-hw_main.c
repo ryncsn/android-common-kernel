@@ -28,6 +28,7 @@
 #define CPUFREQ_HW_STATUS		BIT(0)
 #define SVS_HW_STATUS			BIT(1)
 #define POLL_USEC			1000
+#define CPU_DMA_LATENCY			10000
 #define TIMEOUT_USEC			300000
 #define REG_FREQ_SCALING		0x4cc/* from csram_base */
 #define REG_STOP_CPUDVFS_LOG		0x128 /* from csram_base */
@@ -68,6 +69,7 @@ static const u16 cpufreq_mtk_offsets[REG_ARRAY_SIZE] = {
 	[REG_FREQ_LATENCY]	= 0x114,
 };
 
+static struct pm_qos_request cpufreq_lpm_qos_request;
 static struct cpufreq_mtk *mtk_freq_domain_map[NR_CPUS];
 static bool freq_scaling_disabled = true;
 static bool fdvfs_enabled;
@@ -263,6 +265,7 @@ static int mtk_cpufreq_hw_cpu_init(struct cpufreq_policy *policy)
 
 	/* Let CPUs leave idle-off state for SVS CPU initializing */
 	cpu_latency_qos_add_request(qos_request, PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_add_request(&cpufreq_lpm_qos_request, CPU_DMA_LATENCY);
 
 	/* HW should be in enabled state to proceed now */
 	writel_relaxed(0x1, c->reg_bases[REG_FREQ_ENABLE]);
