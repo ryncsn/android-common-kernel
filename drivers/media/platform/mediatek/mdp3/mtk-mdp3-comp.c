@@ -15,6 +15,7 @@
 
 #include "mdp_reg_rdma.h"
 #include "mdp_reg_ccorr.h"
+#include "mdp_reg_imgi.h"
 #include "mdp_reg_rsz.h"
 #include "mdp_reg_wrot.h"
 #include "mdp_reg_wdma.h"
@@ -781,23 +782,31 @@ static int config_isp_frame(struct mdp_comp_ctx *ctx,
 
 	/* DIP_X_SMX1I_BASE_ADDR, DIP_X_SMX1O_BASE_ADDR */
 	reg = CFG_COMP(MT8183, ctx->param, isp.smxi_iova[0]);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2890, reg, 0xFFFFFFFF);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x27D0, reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX1I_ADDR,
+			  reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX1O_ADDR,
+			  reg, 0xFFFFFFFF);
 
 	/* DIP_X_SMX2I_BASE_ADDR, DIP_X_SMX2O_BASE_ADDR */
 	reg = CFG_COMP(MT8183, ctx->param, isp.smxi_iova[1]);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x28C0, reg, 0xFFFFFFFF);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2800, reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX2I_ADDR,
+			  reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX2O_ADDR,
+			  reg, 0xFFFFFFFF);
 
 	/* DIP_X_SMX3I_BASE_ADDR, DIP_X_SMX3O_BASE_ADDR */
 	reg = CFG_COMP(MT8183, ctx->param, isp.smxi_iova[2]);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x28F0, reg, 0xFFFFFFFF);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2830, reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX3I_ADDR, reg,
+			  0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX3O_ADDR, reg,
+			  0xFFFFFFFF);
 
 	/* DIP_X_SMX4I_BASE_ADDR, DIP_X_SMX4O_BASE_ADDR */
 	reg = CFG_COMP(MT8183, ctx->param, isp.smxi_iova[3]);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2920, reg, 0xFFFFFFFF);
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2860, reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX4I_ADDR,
+			  reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_SMX4O_ADDR,
+			  reg, 0xFFFFFFFF);
 
 	idx = CFG_COMP(MT8183, ctx->param, isp.cq_idx);
 	if (idx >= m_dev->mdp_data->dip_cq_len) {
@@ -824,7 +833,8 @@ static int config_isp_subfrm(struct mdp_comp_ctx *ctx,
 	else
 		return 0;
 
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2304, reg, 0xFFFFFFFF);
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_BASE_OFFSET,
+			  reg, 0xFFFFFFFF);
 
 	return 0;
 }
@@ -849,10 +859,10 @@ static int wait_isp_event(struct mdp_comp_ctx *ctx, struct mdp_cmdq_cmd *cmd)
 
 	/* MDP_DL_SEL: select MDP_CROP */
 	if (c_id & BIT(c1))
-		MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x30, 0x0,
+		MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_DBG_SEL, 0x0,
 				  BIT(9));
 	if (c_id & BIT(c2))
-		MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x30, 0x0,
+		MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_DBG_SEL, 0x0,
 				  BIT(10) | BIT(11));
 
 	idx = CFG_COMP(MT8183, ctx->param, isp.cq_idx);
@@ -862,7 +872,8 @@ static int wait_isp_event(struct mdp_comp_ctx *ctx, struct mdp_cmdq_cmd *cmd)
 	}
 	evt = dip_cq[idx].event_id;
 
-	MM_REG_WRITE_MASK(cmd, subsys_id, base, 0x2000, BIT(idx), BIT(idx));
+	MM_REG_WRITE_MASK(cmd, subsys_id, base, MDP_IMGI_CG_CON,
+			  BIT(idx), BIT(idx));
 	MM_REG_WAIT(cmd, evt);
 
 	return 0;
