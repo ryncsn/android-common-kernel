@@ -185,7 +185,7 @@ impl Transaction {
     }
 
     #[inline(never)]
-    pub(crate) fn debug_print_inner(&self, m: &mut SeqFile, prefix: &str) {
+    pub(crate) fn debug_print_inner(&self, m: &SeqFile, prefix: &str) {
         seq_print!(
             m,
             "{}{}: from {}:{} to {} code {:x} flags {:x} pri {}:{} elapsed {}ms",
@@ -543,7 +543,7 @@ impl DeliverToRead for Transaction {
         self.flags & TF_ONE_WAY == 0
     }
 
-    fn debug_print(&self, m: &mut SeqFile, _prefix: &str, tprefix: &str) -> Result<()> {
+    fn debug_print(&self, m: &SeqFile, _prefix: &str, tprefix: &str) -> Result<()> {
         self.debug_print_inner(m, tprefix);
         Ok(())
     }

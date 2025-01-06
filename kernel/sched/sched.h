@@ -3898,14 +3898,5 @@ void sched_enq_and_set_task(struct sched_enq_and_set_ctx *ctx);
 
 #include "ext.h"
 
-#ifdef CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
-static inline void *android_task_vendor_data(struct task_struct *p)
-{
-	if (p == &init_task)
-		return &vendor_data_pad[0];
-
-	return p + 1;
-}
-#endif
 
 #endif /* _KERNEL_SCHED_SCHED_H */

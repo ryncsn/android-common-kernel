@@ -42,7 +42,7 @@ impl BinderStats {
         }
     }
 
-    pub(crate) fn debug_print(&self, prefix: &str, m: &mut SeqFile) {
+    pub(crate) fn debug_print(&self, prefix: &str, m: &SeqFile) {
         for (i, cnt) in self.bc.iter().enumerate() {
             let cnt = cnt.load(Relaxed);
             if cnt > 0 {

@@ -203,9 +203,9 @@ impl Task {
 
     /// Returns the group leader of the given task.
     pub fn group_leader(&self) -> &Task {
-        // SAFETY: By the type invariant, we know that `self.0` is a valid task. Valid tasks always
-        // have a valid `group_leader`.
-        let ptr = unsafe { *ptr::addr_of!((*self.0.get()).group_leader) };
+        // SAFETY: The group leader of a task never changes after initialization, so reading this
+        // field is not a data race.
+        let ptr = unsafe { *ptr::addr_of!((*self.as_ptr()).group_leader) };
 
         // SAFETY: The lifetime of the returned task reference is tied to the lifetime of `self`,
         // and given that a task has a reference to its group leader, we know it must be valid for
@@ -215,27 +215,27 @@ impl Task {
 
     /// Returns the PID of the given task.
     pub fn pid(&self) -> Pid {
-        // SAFETY: By the type invariant, we know that `self.0` is a valid task. Valid tasks always
-        // have a valid pid.
-        unsafe { *ptr::addr_of!((*self.0.get()).pid) }
+        // SAFETY: The pid of a task never changes after initialization, so reading this field is
+        // not a data race.
+        unsafe { *ptr::addr_of!((*self.as_ptr()).pid) }
     }
 
     /// Returns the UID of the given task.
     pub fn uid(&self) -> Kuid {
-        // SAFETY: By the type invariant, we know that `self.0` is valid.
-        Kuid::from_raw(unsafe { bindings::task_uid(self.0.get()) })
+        // SAFETY: It's always safe to call `task_uid` on a valid task.
+        Kuid::from_raw(unsafe { bindings::task_uid(self.as_ptr()) })
     }
 
     /// Returns the effective UID of the given task.
     pub fn euid(&self) -> Kuid {
-        // SAFETY: By the type invariant, we know that `self.0` is valid.
-        Kuid::from_raw(unsafe { bindings::task_euid(self.0.get()) })
+        // SAFETY: It's always safe to call `task_euid` on a valid task.
+        Kuid::from_raw(unsafe { bindings::task_euid(self.as_ptr()) })
     }
 
     /// Determines whether the given task has pending signals.
     pub fn signal_pending(&self) -> bool {
-        // SAFETY: By the type invariant, we know that `self.0` is valid.
-        unsafe { bindings::signal_pending(self.0.get()) != 0 }
+        // SAFETY: It's always safe to call `signal_pending` on a valid task.
+        unsafe { bindings::signal_pending(self.as_ptr()) != 0 }
     }
 
     /// Returns the given task's pid in the current pid namespace.
@@ -255,10 +255,9 @@ impl Task {
 
     /// Wakes up the task.
     pub fn wake_up(&self) {
-        // SAFETY: By the type invariant, we know that `self.0.get()` is non-null and valid.
-        // And `wake_up_process` is safe to be called for any valid task, even if the task is
+        // SAFETY: It's always safe to call `signal_pending` on a valid task, even if the task
         // running.
-        unsafe { bindings::wake_up_process(self.0.get()) };
+        unsafe { bindings::wake_up_process(self.as_ptr()) };
     }
 
     /// Check if the task has the given capability without logging to the audit log.
@@ -362,7 +361,7 @@ impl CurrentTask {
 unsafe impl crate::types::AlwaysRefCounted for Task {
     fn inc_ref(&self) {
         // SAFETY: The existence of a shared reference means that the refcount is nonzero.
-        unsafe { bindings::get_task_struct(self.0.get()) };
+        unsafe { bindings::get_task_struct(self.as_ptr()) };
     }
 
     unsafe fn dec_ref(obj: ptr::NonNull<Self>) {
