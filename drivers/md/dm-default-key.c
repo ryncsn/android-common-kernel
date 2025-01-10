@@ -9,6 +9,8 @@
 
 #define DM_MSG_PREFIX		"default-key"
 
+#define DM_DEFAULT_KEY_MAX_KEY_SIZE	64
+
 static const struct dm_default_key_cipher {
 	const char *name;
 	enum blk_crypto_mode_num mode_num;
@@ -65,9 +67,11 @@ lookup_cipher(const char *cipher_string)
 static void default_key_dtr(struct dm_target *ti)
 {
 	struct default_key_c *dkc = ti->private;
+	struct blk_crypto_key *blk_key = &dkc->key;
 
 	if (dkc->dev) {
-		blk_crypto_evict_key(dkc->dev->bdev, &dkc->key);
+		if (blk_key->size > 0)
+			blk_crypto_evict_key(dkc->dev->bdev, blk_key);
 		dm_put_device(ti, dkc->dev);
 	}
 	kfree_sensitive(dkc->cipher_string);

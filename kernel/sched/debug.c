@@ -335,7 +335,147 @@ static const struct file_operations sched_debug_fops = {
 	.release	= seq_release,
 };
 
+static unsigned long fair_server_period_max = (1UL << 22) * NSEC_PER_USEC; /* ~4 seconds */
+static unsigned long fair_server_period_min = (100) * NSEC_PER_USEC;     /* 100 us */
+#define DLSERVER_PARAMS_STR_MAXLEN	32
+
+static int sched_fair_server_write(long cpu, u64 period, u64 runtime)
+{
+	struct rq *rq = cpu_rq(cpu);
+	int ret = 0;
+
+	scoped_guard (rq_lock_irqsave, rq) {
+
+		if (period == rq->fair_server.dl_period && runtime == rq->fair_server.dl_runtime)
+			return 0;
+
+		if (rq->cfs.h_nr_running) {
+			update_rq_clock(rq);
+			dl_server_stop(&rq->fair_server);
+		}
+
+		ret = dl_server_apply_params(&rq->fair_server, runtime, period, 0);
+
+		if (!runtime)
+			printk_deferred("Fair server disabled in CPU %d, system may crash due to starvation.\n",
+					cpu_of(rq));
+
+		if (rq->cfs.h_nr_running)
+			dl_server_start(&rq->fair_server);
+	}
+
+	return ret;
+}
+
+static ssize_t sched_fair_server_params_write(struct file *filp, const char __user *ubuf,
+				       size_t cnt, loff_t *ppos)
+{
+	long cpu = (long) ((struct seq_file *) filp->private_data)->private;
+	char buf[DLSERVER_PARAMS_STR_MAXLEN];
+	char *runtime_str, *period_str;
+	u64 period, runtime;
+	char *p = buf;
+	int err;
+
+	if (cnt == 0 || cnt > DLSERVER_PARAMS_STR_MAXLEN)
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, cnt))
+		return -EFAULT;
+
+	buf[cnt - 1] = '\0';
+	period_str = strsep(&p, ",");
+	runtime_str = p;
+	if (!p || !strlen(p))
+		return -EINVAL;
+
+	err = kstrtoull(period_str, 10, &period);
+	if (err)
+		return -EINVAL;
+
+	err = kstrtoull(runtime_str, 10, &runtime);
+	if (err)
+		return -EINVAL;
+
+	if (runtime > period || period > fair_server_period_max ||
+			period < fair_server_period_min)
+		return -EINVAL;
+
+	if (cpu == -1) {
+		for_each_possible_cpu(cpu) {
+			err = sched_fair_server_write(cpu, period, runtime);
+			if (err)
+				break;
+		}
+	} else {
+		err = sched_fair_server_write(cpu, period, runtime);
+	}
+
+	if (!err)
+		*ppos += cnt;
+
+	return err ? err : cnt;
+}
+
+static inline void sched_fair_server_show(struct seq_file *m, long cpu)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	seq_printf(m, "cpu%ld: %llu,%llu\n", cpu,
+			rq->fair_server.dl_period,
+			rq->fair_server.dl_runtime);
+}
+
+static int sched_fair_server_params_show(struct seq_file *m, void *v)
+{
+	long cpu = (long) m->private;
+
+	if (cpu == -1) {
+		for_each_possible_cpu(cpu) {
+			sched_fair_server_show(m, cpu);
+		}
+	} else {
+		sched_fair_server_show(m, cpu);
+	}
+	return 0;
+}
+
+static int sched_fair_server_params_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, sched_fair_server_params_show, inode->i_private);
+}
+
+static const struct file_operations fair_server_params_fops = {
+	.open		= sched_fair_server_params_open,
+	.write		= sched_fair_server_params_write,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static struct dentry *debugfs_sched;
+
+static void debugfs_fair_server_init(void)
+{
+	struct dentry *d_fair;
+	unsigned long cpu;
+
+	d_fair = debugfs_create_dir("fair_server", debugfs_sched);
+	if (!d_fair)
+		return;
+
+	debugfs_create_file("params", 0644, d_fair, (void *)-1, &fair_server_params_fops);
+
+	for_each_possible_cpu(cpu) {
+		struct dentry *d_cpu;
+		char buf[32];
+
+		snprintf(buf, sizeof(buf), "cpu%lu", cpu);
+		d_cpu = debugfs_create_dir(buf, d_fair);
+
+		debugfs_create_file("params", 0644, d_cpu, (void *) cpu, &fair_server_params_fops);
+	}
+}
 
 static __init int sched_init_debug(void)
 {
@@ -375,6 +515,8 @@ static __init int sched_init_debug(void)
 #endif
 
 	debugfs_create_file("debug", 0444, debugfs_sched, NULL, &sched_debug_fops);
+
+	debugfs_fair_server_init();
 
 	return 0;
 }
@@ -734,9 +876,12 @@ void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
 #ifdef CONFIG_SMP
 	PU(rt_nr_migratory);
 #endif
+
+#ifdef CONFIG_RT_GROUP_SCHED
 	P(rt_throttled);
 	PN(rt_time);
 	PN(rt_runtime);
+#endif
 
 #undef PN
 #undef PU
@@ -755,7 +900,6 @@ void print_dl_rq(struct seq_file *m, int cpu, struct dl_rq *dl_rq)
 
 	PU(dl_nr_running);
 #ifdef CONFIG_SMP
-	PU(dl_nr_migratory);
 	dl_bw = &cpu_rq(cpu)->rd->dl_bw;
 #else
 	dl_bw = &dl_rq->dl_bw;

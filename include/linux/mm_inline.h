@@ -381,10 +381,13 @@ static inline bool lru_gen_del_folio(struct lruvec *lruvec, struct folio *folio,
 	return false;
 }
 
-static inline void folio_migrate_refs(struct folio *new, struct folio *old)
+static inline int lru_raw_gen_from_flags(unsigned long flags)
 {
-
+	return 0;
 }
+
+#define ISOLATED_FOLIO_MIN 0
+
 #endif /* CONFIG_LRU_GEN */
 
 static __always_inline

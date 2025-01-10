@@ -8,8 +8,9 @@
 
 / {
 	model = "Google Steelix board";
-	compatible = "google,steelix-sku131072", "google,steelix",
-		     "mediatek,mt8186";
+	compatible = "google,steelix-sku131072", "google,steelix-sku131074",
+		"google,steelix-sku2147483647", "google,steelix",
+		"mediatek,mt8186";
 	chassis-type = "convertible";
 };
 

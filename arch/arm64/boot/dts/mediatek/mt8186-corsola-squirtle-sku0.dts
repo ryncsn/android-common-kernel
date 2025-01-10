@@ -9,5 +9,6 @@
 / {
 	model = "Google squirtle sku0/unprovisioned board";
 	compatible = "google,squirtle-sku0","google,squirtle-sku2147483647",
-		     "google,squirtle","mediatek,mt8186";
+		"google,squirtle-sku2147483391",
+		"google,squirtle","mediatek,mt8186";
 };

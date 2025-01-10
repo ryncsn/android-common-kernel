@@ -15,6 +15,7 @@
 
 #include <linux/acpi.h>
 #include <linux/hid.h>
+#include <linux/i2c.h>
 #include <linux/input/vivaldi-fmap.h>
 #include <linux/leds.h>
 #include <linux/module.h>
@@ -40,11 +41,14 @@ struct cbas_ec {
 	bool base_present;
 	bool base_folded;
 	struct notifier_block notifier;
+	struct i2c_board_info *tp_info;
+	struct i2c_client *tp_i2c_client;
 };
 
 static struct cbas_ec cbas_ec;
 static DEFINE_SPINLOCK(cbas_ec_lock);
 static DEFINE_MUTEX(cbas_ec_reglock);
+static DEFINE_SPINLOCK(cbas_ec_touchpad_lock);
 
 static bool cbas_parse_base_state(const void *data)
 {
@@ -91,6 +95,65 @@ static int cbas_ec_query_base(struct cros_ec_device *ec_dev, bool get_state,
 	return ret;
 }
 
+static int cbas_ec_hotplug_tp(bool attached)
+{
+	struct i2c_adapter *tp_bus = NULL;
+	int ret = 0;
+	unsigned long flags;
+
+	if (!cbas_ec.tp_info)
+		return 0;
+
+	if (attached && !cbas_ec.tp_i2c_client) {
+		struct i2c_client *i2c_client;
+
+		tp_bus = of_get_i2c_adapter_by_node(
+			cbas_ec.tp_info->of_node->parent);
+		if (!tp_bus) {
+			dev_err(cbas_ec.dev, "cannot find parent bus\n");
+			ret = -ENODEV;
+			goto out;
+		}
+
+		i2c_client = i2c_new_client_device(tp_bus, cbas_ec.tp_info);
+		if (IS_ERR(i2c_client)) {
+			dev_err(cbas_ec.dev, "cannot create i2c client\n");
+			ret = PTR_ERR(cbas_ec.tp_i2c_client);
+		} else {
+			spin_lock_irqsave(&cbas_ec_touchpad_lock, flags);
+			if (!cbas_ec.tp_i2c_client) {
+				cbas_ec.tp_i2c_client = i2c_client;
+				i2c_client = NULL;
+			}
+			spin_unlock_irqrestore(&cbas_ec_touchpad_lock, flags);
+
+			/* Unregister i2c_client if another instance already
+			 * exists.
+			 */
+			if (i2c_client)
+				i2c_unregister_device(i2c_client);
+		}
+	}
+
+	if (!attached && cbas_ec.tp_i2c_client) {
+		struct i2c_client *i2c_client = NULL;
+
+		spin_lock_irqsave(&cbas_ec_touchpad_lock, flags);
+		i2c_client = cbas_ec.tp_i2c_client;
+		cbas_ec.tp_i2c_client = NULL;
+		spin_unlock_irqrestore(&cbas_ec_touchpad_lock, flags);
+
+		if (i2c_client)
+			i2c_unregister_device(i2c_client);
+	}
+
+out:
+	if (tp_bus)
+		i2c_put_adapter(tp_bus);
+
+	return ret;
+}
+
 static int cbas_ec_notify(struct notifier_block *nb,
 			      unsigned long queued_during_suspend,
 			      void *_notify)
@@ -119,7 +182,7 @@ static int cbas_ec_notify(struct notifier_block *nb,
 			 * report changes, as we assume that on attach the base
 			 * is not folded.
 			 */
-			if (base_present != cbas_ec.base_present) {
+			if (base_present != cbas_ec.base_present && cbas_ec.input) {
 				input_report_switch(cbas_ec.input,
 						    SW_TABLET_MODE,
 						    !base_present);
@@ -128,6 +191,9 @@ static int cbas_ec_notify(struct notifier_block *nb,
 			}
 
 			spin_unlock_irqrestore(&cbas_ec_lock, flags);
+
+			cbas_ec_hotplug_tp(base_present);
+
 		}
 	}
 
@@ -154,7 +220,7 @@ static __maybe_unused int cbas_ec_resume(struct device *dev)
 		 * it will resend its state on resume, and we'll update it
 		 * in hammer_event().
 		 */
-		if (!cbas_ec.base_present) {
+		if (!cbas_ec.base_present && cbas_ec.input) {
 			input_report_switch(cbas_ec.input, SW_TABLET_MODE, 1);
 			input_sync(cbas_ec.input);
 		}
@@ -175,19 +241,10 @@ static void cbas_ec_set_input(struct input_dev *input)
 	spin_unlock_irq(&cbas_ec_lock);
 }
 
-static int __cbas_ec_probe(struct platform_device *pdev)
+static int cbas_ec_init_whisker_switch(struct platform_device *pdev)
 {
-	struct cros_ec_device *ec = dev_get_drvdata(pdev->dev.parent);
 	struct input_dev *input;
-	bool base_supported;
 	int error;
-
-	error = cbas_ec_query_base(ec, false, &base_supported);
-	if (error)
-		return error;
-
-	if (!base_supported)
-		return -ENXIO;
 
 	input = devm_input_allocate_device(&pdev->dev);
 	if (!input)
@@ -205,6 +262,28 @@ static int __cbas_ec_probe(struct platform_device *pdev)
 		return error;
 	}
 
+	input_report_switch(input, SW_TABLET_MODE,
+			    !cbas_ec.base_present || cbas_ec.base_folded);
+
+	cbas_ec_set_input(input);
+
+	return 0;
+}
+
+static int __cbas_ec_probe(struct platform_device *pdev)
+{
+	struct cros_ec_device *ec = dev_get_drvdata(pdev->dev.parent);
+	bool base_supported;
+	int error;
+	struct device_node *tp_node;
+
+	error = cbas_ec_query_base(ec, false, &base_supported);
+	if (error)
+		return error;
+
+	if (!base_supported)
+		return -ENXIO;
+
 	/* Seed the state */
 	error = cbas_ec_query_base(ec, true, &cbas_ec.base_present);
 	if (error) {
@@ -218,10 +297,36 @@ static int __cbas_ec_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "%s: base: %d, folded: %d\n", __func__,
 		cbas_ec.base_present, cbas_ec.base_folded);
 
-	input_report_switch(input, SW_TABLET_MODE,
-			    !cbas_ec.base_present || cbas_ec.base_folded);
+	if (!of_property_read_bool(pdev->dev.of_node,
+				   "disable-whisker-input")) {
+		error = cbas_ec_init_whisker_switch(pdev);
+		if (error)
+			return error;
+	}
 
-	cbas_ec_set_input(input);
+	tp_node = of_parse_phandle(pdev->dev.of_node, "hid-i2c-tp", 0);
+	if (tp_node) {
+		cbas_ec.tp_info =
+			kmalloc(sizeof(struct i2c_board_info), GFP_KERNEL);
+		if (!cbas_ec.tp_info)
+			return -ENOMEM;
+
+		error = of_i2c_get_board_info(&pdev->dev, tp_node,
+					      cbas_ec.tp_info);
+		if (error) {
+			dev_err(&pdev->dev, "cannot get i2c client info: %d\n",
+				error);
+			kfree(cbas_ec.tp_info);
+			cbas_ec.tp_info = NULL;
+			return error;
+		}
+
+		error = cbas_ec_hotplug_tp(cbas_ec.base_present);
+		if (error) {
+			dev_err(&pdev->dev, "cannot initialize i2c client\n");
+			return error;
+		}
+	}
 
 	cbas_ec.dev = &pdev->dev;
 	cbas_ec.notifier.notifier_call = cbas_ec_notify;
@@ -264,6 +369,7 @@ static int cbas_ec_remove(struct platform_device *pdev)
 	blocking_notifier_chain_unregister(&ec->event_notifier,
 					   &cbas_ec.notifier);
 	cbas_ec_set_input(NULL);
+	cbas_ec_hotplug_tp(false);
 
 	mutex_unlock(&cbas_ec_reglock);
 	return 0;
