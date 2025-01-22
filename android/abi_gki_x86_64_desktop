@@ -3063,10 +3063,20 @@
   tty_unthrottle
   typec_altmode2port
   typec_altmode_attention
+  typec_altmode_enter
+  typec_altmode_exit
   typec_altmode_get_partner
+  typec_altmode_get_plug
+  typec_altmode_notify
+  typec_altmode_put_plug
+  __typec_altmode_register_driver
   typec_altmode_set_ops
+  typec_altmode_unregister_driver
   typec_altmode_update_active
   typec_altmode_vdm
+  typec_cable_get
+  typec_cable_is_active
+  typec_cable_put
   typec_find_orientation
   typec_find_port_data_role
   typec_find_port_power_role
