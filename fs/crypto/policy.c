@@ -669,7 +669,7 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 		return 1;
 
 	/* Encrypted directories must not contain unencrypted files */
-	if (!IS_ENCRYPTED(child))
+	if (!IS_ENCRYPTED(child) || IS_BLKCRYPTO_PASSTHROUGH(child))
 		return 0;
 
 	/*
