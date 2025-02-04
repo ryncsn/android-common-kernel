@@ -2956,6 +2956,35 @@
   tasklet_unlock_spin_wait
   tasklet_unlock_wait
   __task_pid_nr_ns
+  tb_property_add_immediate
+  tb_property_create_dir
+  tb_property_free_dir
+  tb_register_property_dir
+  tb_register_protocol_handler
+  tb_register_service_driver
+  tb_ring_alloc_rx
+  tb_ring_alloc_tx
+  __tb_ring_enqueue
+  tb_ring_free
+  tb_ring_poll
+  tb_ring_poll_complete
+  tb_ring_start
+  tb_ring_stop
+  tb_service_type
+  tb_unregister_property_dir
+  tb_unregister_protocol_handler
+  tb_unregister_service_driver
+  tb_xdomain_alloc_in_hopid
+  tb_xdomain_alloc_out_hopid
+  tb_xdomain_disable_paths
+  tb_xdomain_enable_paths
+  tb_xdomain_lane_bonding_disable
+  tb_xdomain_lane_bonding_enable
+  tb_xdomain_release_in_hopid
+  tb_xdomain_release_out_hopid
+  tb_xdomain_request
+  tb_xdomain_response
+  tb_xdomain_type
   test_taint
   thermal_acpi_active_trip_temp
   thermal_acpi_critical_trip_temp
