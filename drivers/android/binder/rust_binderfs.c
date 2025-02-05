@@ -551,6 +551,9 @@ struct dentry *rust_binderfs_create_proc_file(struct inode *nodp, int pid)
 	char strbuf[20 + 1];
 	void *data = (void *)(unsigned long) pid;
 
+	if (!dir)
+		return NULL;
+
 	snprintf(strbuf, sizeof(strbuf), "%u", pid);
 	return rust_binderfs_create_file(dir, strbuf, &rust_binder_proc_fops, data);
 }
