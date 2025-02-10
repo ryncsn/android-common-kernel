@@ -2322,7 +2322,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2332,7 +2335,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2382,7 +2388,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2392,7 +2401,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2413,7 +2425,20 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
+)
+
+cc_library(
+    name = "kselftest_timers_common_hdrs",
+    hdrs = [
+        "include/vdso/time64.h",
+    ],
+    copts = _KSELFTEST_COPTS,
+    includes = ["."],
+    visibility = ["//visibility:private"],
 )
 
 cc_binary_with_abi(
@@ -2424,7 +2449,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2434,7 +2462,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2445,7 +2476,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2457,6 +2491,7 @@ cc_binary_with_abi(
     visibility = ["//visibility:private"],
     deps = [
         ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
         ":kselftest_timers_inconsistency_check",
         ":kselftest_timers_nanosleep",
         ":kselftest_timers_nsleep_lat",
@@ -2480,7 +2515,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2523,7 +2561,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
