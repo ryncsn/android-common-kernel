@@ -108,6 +108,8 @@ static size_t virtio_video_parse_virtio_frame(struct virtio_video_device *vvd,
 	frm->frame_rates =  kcalloc(frame->num_rates,
 				    sizeof(struct virtio_video_format_range),
 				    GFP_KERNEL);
+	if (!frm->frame_rates)
+		return 0;
 
 	offset = sizeof(struct virtio_video_format_frame);
 	for (idx = 0; idx < frame->num_rates; idx++) {
@@ -153,6 +155,8 @@ static size_t virtio_video_parse_virtio_fmt(struct virtio_video_device *vvd,
 	fmt->frames = kcalloc(fmt_desc->num_frames,
 			      sizeof(struct video_format_frame),
 			      GFP_KERNEL);
+	if (!fmt->frames)
+		return 0;
 
 	offset = sizeof(struct virtio_video_format_desc);
 	for (idx = 0; idx < fmt_desc->num_frames; idx++) {
