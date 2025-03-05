@@ -21,6 +21,26 @@
 		device_type = "memory";
 	};
 
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		cma_test_reserve: cma_test_reserve {
+			compatible = "shared-dma-pool";
+			reusable;
+			size = <0x0 0x2000000>; /* 32 MiB */
+			alignment = <0x0 0x00001000>;
+			alloc-ranges = <0x0 0x9 0x80000000 0x80000000>,
+				       <0x0 0x9 0x00000000 0x80000000>;
+		};
+	};
+
+	cma_test_node {
+		compatible = "cma_test_dummy";
+		memory-region = <&cma_test_reserve>;
+	};
+
 	platform-bus@c000000 {
 		interrupt-parent = <0x8002>;
 		ranges = <0x00 0x00 0xc000000 0x2000000>;
@@ -381,7 +401,7 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyAMA0 root=/dev/vda oops=panic panic_on_warn=1 panic=-1 debug earlyprintk=serial";
+		bootargs = "console=ttyAMA0 root=/dev/vda oops=panic panic_on_warn=1 cma=192MB panic=-1 debug earlyprintk=serial";
 		stdout-path = "/pl011@9000000";
 		rng-seed = <0xf6d3d63d 0x492012bf 0x99e8c653 0xebfd5021 0xb49dd01b 0x548c6427 0x73d12532 0xdadb6189>;
 		kaslr-seed = <0x17ef0624 0xe4ddc04d>;
