@@ -1,6 +1,51 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Platform device driver to test CMA allocations
+ *
+ * The expected structure of the device tree for the dummy TPU is:
+ *
+ * / {
+ *
+ *        ......
+ *
+ *	memory@40000000 {
+ *		reg = <0x00 0x40000000 0x00 0x40000000>;
+ *		device_type = "memory";
+ *	};
+ *
+ *	reserved-memory {
+ *		#address-cells = <2>;
+ *		#size-cells = <2>;
+ *		ranges;
+ *
+ *              // CMA reservation are taken from "shared-dma-pool".
+ *		cma_test_reserve: cma_test_reserve {
+ *			compatible = "shared-dma-pool";
+ *			reusable;
+ *			size = <0x0 0x2000000>; // 32 MiB
+ *			alignment = <0x0 0x00001000>;
+ *			alloc-ranges = <0x0 0x9 0x80000000 0x80000000>,
+ *				<0x0 0x9 0x00000000 0x80000000>;
+ *		};
+ *	};
+ *
+ *      // This node uses the CMA reservation.
+ *	cma_test_node {
+ *		compatible = "cma_test_dummy";
+ *		memory-region = <&cma_test_reserve>;
+ *		state = "active";
+ *	};
+ *
+ * The CMA stats can be checked with:
+ *
+ *   # cat /proc/meminfo | grep Cma
+ *   CmaTotal:         229376 kB
+ *   CmaFree:          228992 kB
+ *
+ * Note: The CmaTotal is the sum of:
+ *
+ *   - CMA reservations defined in the DTS.
+ -   - CMA size passed as a kernel parameter. For example cma=192MB
  */
 
 #define pr_fmt(fmt) "%s: %s: " fmt, KBUILD_MODNAME, __func__
@@ -26,8 +71,14 @@ static const struct of_device_id cma_test_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, cma_test_dt_ids);
 
+static void rmem_remove_callback(void *dev)
+{
+	of_reserved_mem_device_release((struct device *)dev);
+}
+
 static int cma_test_probe(struct platform_device *pdev)
 {
+	int ret;
 	const struct of_device_id *of_id;
 
 	pr_info("Probing device");
@@ -36,6 +87,20 @@ static int cma_test_probe(struct platform_device *pdev)
 	if (!of_id) {
 		pr_info("The node was not found in DTB");
 		return -ENODEV;
+	}
+
+	ret = of_reserved_mem_device_init(&pdev->dev);
+	if (ret || !pdev->dev.cma_area) {
+		dev_err(&pdev->dev,
+			"The CMA reserved area is not assigned (ret %d)\n",
+			ret);
+		return -EINVAL;
+	}
+
+	ret = devm_add_action(&pdev->dev, rmem_remove_callback, &pdev->dev);
+	if (ret) {
+		of_reserved_mem_device_release(&pdev->dev);
+		return ret;
 	}
 
 	return 0;
