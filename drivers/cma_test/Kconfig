@@ -1,0 +1,8 @@
+#
+# Configuration for the CMA allocation test driver
+#
+config CMA_ALLOC_TEST
+	tristate "CMA allocation test driver"
+	default y
+	help
+	  Driver to test and debug CMA allocations
