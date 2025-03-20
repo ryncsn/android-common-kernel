@@ -10,8 +10,6 @@ include $(objtree)/include/config/auto.conf
 include $(srctree)/scripts/Kbuild.include
 include $(srctree)/scripts/Makefile.lib
 
-mixed-build-prefix = $(if $(KBUILD_MIXED_TREE),$(KBUILD_MIXED_TREE)/)
-
 # find all modules listed in modules.order
 modules := $(call read-file, modules.order)
 
