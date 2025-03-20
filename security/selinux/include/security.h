@@ -197,18 +197,20 @@ static inline bool selinux_policycap_userspace_initial_context(void)
 		selinux_state.policycap[POLICYDB_CAP_USERSPACE_INITIAL_CONTEXT]);
 }
 
+static inline bool selinux_policycap_netlink_xperm(void)
+{
+	return READ_ONCE(
+		selinux_state.policycap[POLICYDB_CAP_NETLINK_XPERM]);
+}
+
 static inline bool selinux_android_nlroute_getlink(void)
 {
-	struct selinux_state *state = &selinux_state;
-
-	return state->android_netlink_route;
+	return READ_ONCE(selinux_state.android_netlink_route);
 }
 
 static inline bool selinux_android_nlroute_getneigh(void)
 {
-	struct selinux_state *state = &selinux_state;
-
-	return state->android_netlink_getneigh;
+	return READ_ONCE(selinux_state.android_netlink_getneigh);
 }
 
 struct selinux_policy_convert_data;

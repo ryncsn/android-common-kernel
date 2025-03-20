@@ -20,7 +20,7 @@ macro_rules! declare_trace {
                 // SAFETY: It's always okay to query the static key for a tracepoint.
                 let should_trace = unsafe {
                     $crate::macros::paste! {
-                        $crate::static_key::static_key_false!(
+                        $crate::jump_label::static_branch_unlikely!(
                             $crate::bindings::[< __tracepoint_ $name >],
                             $crate::bindings::tracepoint,
                             key

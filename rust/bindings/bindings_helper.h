@@ -20,7 +20,9 @@
 #include <linux/fs.h>
 #include <linux/jiffies.h>
 #include <linux/list_lru.h>
+#include <linux/jump_label.h>
 #include <linux/mdio.h>
+#include <linux/miscdevice.h>
 #include <linux/phy.h>
 #include <linux/pid_namespace.h>
 #include <linux/poll.h>
@@ -36,6 +38,7 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 #include <trace/events/rust_binder.h>
+#include <trace/events/rust_sample.h>
 #include <trace/hooks/rust_binder.h>
 #include <uapi/linux/android/binder.h>
 #include <uapi/linux/android/binderfs.h>
@@ -50,4 +53,5 @@ const gfp_t RUST_CONST_HELPER_GFP_KERNEL_ACCOUNT = GFP_KERNEL_ACCOUNT;
 const gfp_t RUST_CONST_HELPER_GFP_NOWAIT = GFP_NOWAIT;
 const gfp_t RUST_CONST_HELPER___GFP_ZERO = __GFP_ZERO;
 const gfp_t RUST_CONST_HELPER___GFP_HIGHMEM = ___GFP_HIGHMEM;
+const gfp_t RUST_CONST_HELPER___GFP_NOWARN = ___GFP_NOWARN;
 const blk_features_t RUST_CONST_HELPER_BLK_FEAT_ROTATIONAL = BLK_FEAT_ROTATIONAL;

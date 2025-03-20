@@ -8,6 +8,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_pkg//pkg:install.bzl", "pkg_install")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_zip")
+load("@rules_python//python:defs.bzl", "py_library")
 load(
     "//build/kernel/kleaf:common_kernels.bzl",
     "common_kernel",
@@ -256,27 +257,6 @@ fail_rule(
 Consider building @@//common:kernel_aarch64 with:
     * --notrim to disable trimming, or
     * --debug to enable additional debug options.""",
-    visibility = ["//visibility:public"],
-)
-
-common_kernel(
-    name = "kernel_aarch64_interceptor",
-    outs = DEFAULT_GKI_OUTS,
-    arch = "arm64",
-    ddk_headers_archive = ":kernel_aarch64_ddk_headers_archive",
-    ddk_module_headers = [":all_headers_aarch64"],
-    defconfig = "arch/arm64/configs/gki_defconfig",
-    enable_interceptor = True,
-    extra_dist = [
-        ":test_mappings_zip",
-        ":tests_zip_arm64",
-    ],
-    gki_system_dlkm_modules = ":gki_system_dlkm_modules_arm64",
-    kcflags = COMMON_KCFLAGS,
-    make_goals = _GKI_AARCH64_MAKE_GOALS,
-    makefile = ":Makefile",
-    module_implicit_outs = get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
-    system_dlkm_extra_archive_files = [":generate_gki_module_info_arm64"],
     visibility = ["//visibility:public"],
 )
 
@@ -657,8 +637,8 @@ _DB845C_MODULE_OUTS = [
     "drivers/net/wireless/ath/ath11k/ath11k_pci.ko",
     "drivers/net/wireless/ath/ath12k/ath12k.ko",
     "drivers/nvmem/nvmem_qfprom.ko",
-    "drivers/pci/pwrctl/pci-pwrctl-core.ko",
-    "drivers/pci/pwrctl/pci-pwrctl-pwrseq.ko",
+    "drivers/pci/pwrctrl/pci-pwrctrl-core.ko",
+    "drivers/pci/pwrctrl/pci-pwrctrl-pwrseq.ko",
     "drivers/phy/qualcomm/phy-qcom-eusb2-repeater.ko",
     "drivers/phy/qualcomm/phy-qcom-qmp-combo.ko",
     "drivers/phy/qualcomm/phy-qcom-qmp-pcie.ko",
@@ -1444,6 +1424,16 @@ pkg_install(
     visibility = ["//visibility:private"],
 )
 
+py_library(
+    name = "kunit_parser",
+    srcs = [
+        "tools/testing/kunit/kunit_parser.py",
+        "tools/testing/kunit/kunit_printer.py",
+    ],
+    imports = ["tools/testing/kunit"],
+    visibility = ["//visibility:public"],
+)
+
 # DDK Headers
 # All headers. These are the public targets for DDK modules to use.
 alias(
@@ -1518,6 +1508,7 @@ ddk_headers(
         "drivers/thermal/thermal_core.h",
         "drivers/thermal/thermal_debugfs.h",
         "drivers/thermal/thermal_netlink.h",
+        "drivers/thermal/thermal_thresholds.h",
         "sound/usb/card.h",
         "sound/usb/usbaudio.h",
         ":all_headers_allowlist_aarch64_globs",
@@ -2228,7 +2219,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2238,7 +2232,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2288,7 +2285,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2298,7 +2298,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2319,7 +2322,20 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
+)
+
+cc_library(
+    name = "kselftest_timers_common_hdrs",
+    hdrs = [
+        "include/vdso/time64.h",
+    ],
+    copts = _KSELFTEST_COPTS,
+    includes = ["."],
+    visibility = ["//visibility:private"],
 )
 
 cc_binary_with_abi(
@@ -2330,7 +2346,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2340,7 +2359,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2351,7 +2373,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2363,6 +2388,7 @@ cc_binary_with_abi(
     visibility = ["//visibility:private"],
     deps = [
         ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
         ":kselftest_timers_inconsistency_check",
         ":kselftest_timers_nanosleep",
         ":kselftest_timers_nsleep_lat",
@@ -2386,7 +2412,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(
@@ -2429,7 +2458,10 @@ cc_binary_with_abi(
     path_prefix = _KSELFTEST_DIR,
     target_compatible_with = ["@platforms//os:android"],
     visibility = ["//visibility:private"],
-    deps = [":kselftest_headers_lib"],
+    deps = [
+        ":kselftest_headers_lib",
+        ":kselftest_timers_common_hdrs",
+    ],
 )
 
 cc_binary_with_abi(

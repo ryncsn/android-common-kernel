@@ -10,6 +10,7 @@
 #include <linux/file.h>
 #include <linux/backing-file.h>
 #include <linux/splice.h>
+#include <linux/pagemap.h>
 
 static void fuse_file_accessed(struct file *file)
 {
@@ -18,21 +19,25 @@ static void fuse_file_accessed(struct file *file)
 	fuse_invalidate_atime(inode);
 }
 
-static void fuse_passthrough_end_write(struct file *file, loff_t pos, ssize_t ret)
+static void fuse_passthrough_end_write(struct kiocb *iocb, ssize_t ret)
 {
-	struct inode *inode = file_inode(file);
+	struct inode *inode = file_inode(iocb->ki_filp);
 	struct fuse_conn *fc = get_fuse_conn(inode);
-	struct fuse_file *ff = file->private_data;
+	struct fuse_file *ff = iocb->ki_filp->private_data;
 	struct file *backing_file = fuse_file_passthrough(ff);
 	struct inode *backing_inode = file_inode(backing_file);
 
 	if (!fc->writeback_cache) {
-		fuse_write_update_attr(inode, pos, ret);
+		fuse_write_update_attr(inode, iocb->ki_pos, ret);
 	} else {
 		inode_set_mtime_to_ts(inode, inode_get_mtime(backing_inode));
 		inode_set_ctime_to_ts(inode, inode_get_ctime(backing_inode));
 		inode->i_blocks = backing_inode->i_blocks;
 		i_size_write(inode, i_size_read(backing_inode));
+	}
+	if (ret > 0) {
+		invalidate_inode_pages2_range(inode->i_mapping,
+				(iocb->ki_pos - ret) >> PAGE_SHIFT, iocb->ki_pos >> PAGE_SHIFT);
 	}
 }
 
@@ -45,7 +50,6 @@ ssize_t fuse_passthrough_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	ssize_t ret;
 	struct backing_file_ctx ctx = {
 		.cred = ff->cred,
-		.user_file = file,
 		.accessed = fuse_file_accessed,
 	};
 
@@ -56,6 +60,8 @@ ssize_t fuse_passthrough_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	if (!count)
 		return 0;
 
+	/* Flush any dirtied cache pages from fuse cache */
+	write_inode_now(file_inode(file), 1);
 	ret = backing_file_read_iter(backing_file, iter, iocb, iocb->ki_flags,
 				     &ctx);
 
@@ -73,7 +79,6 @@ ssize_t fuse_passthrough_write_iter(struct kiocb *iocb,
 	ssize_t ret;
 	struct backing_file_ctx ctx = {
 		.cred = ff->cred,
-		.user_file = file,
 		.end_write = fuse_passthrough_end_write,
 	};
 
@@ -99,15 +104,23 @@ ssize_t fuse_passthrough_splice_read(struct file *in, loff_t *ppos,
 	struct file *backing_file = fuse_file_passthrough(ff);
 	struct backing_file_ctx ctx = {
 		.cred = ff->cred,
-		.user_file = in,
 		.accessed = fuse_file_accessed,
 	};
+	struct kiocb iocb;
+	ssize_t ret;
 
 	pr_debug("%s: backing_file=0x%p, pos=%lld, len=%zu, flags=0x%x\n", __func__,
-		 backing_file, ppos ? *ppos : 0, len, flags);
+		 backing_file, *ppos, len, flags);
 
-	return backing_file_splice_read(backing_file, ppos, pipe, len, flags,
-					&ctx);
+	/* Flush any dirtied cache pages from fuse cache */
+	write_inode_now(file_inode(in), 1);
+
+	init_sync_kiocb(&iocb, in);
+	iocb.ki_pos = *ppos;
+	ret = backing_file_splice_read(backing_file, &iocb, pipe, len, flags, &ctx);
+	*ppos = iocb.ki_pos;
+
+	return ret;
 }
 
 ssize_t fuse_passthrough_splice_write(struct pipe_inode_info *pipe,
@@ -120,16 +133,18 @@ ssize_t fuse_passthrough_splice_write(struct pipe_inode_info *pipe,
 	ssize_t ret;
 	struct backing_file_ctx ctx = {
 		.cred = ff->cred,
-		.user_file = out,
 		.end_write = fuse_passthrough_end_write,
 	};
+	struct kiocb iocb;
 
 	pr_debug("%s: backing_file=0x%p, pos=%lld, len=%zu, flags=0x%x\n", __func__,
-		 backing_file, ppos ? *ppos : 0, len, flags);
+		 backing_file, *ppos, len, flags);
 
 	inode_lock(inode);
-	ret = backing_file_splice_write(pipe, backing_file, ppos, len, flags,
-					&ctx);
+	init_sync_kiocb(&iocb, out);
+	iocb.ki_pos = *ppos;
+	ret = backing_file_splice_write(pipe, backing_file, &iocb, len, flags, &ctx);
+	*ppos = iocb.ki_pos;
 	inode_unlock(inode);
 
 	return ret;
@@ -141,7 +156,6 @@ ssize_t fuse_passthrough_mmap(struct file *file, struct vm_area_struct *vma)
 	struct file *backing_file = fuse_file_passthrough(ff);
 	struct backing_file_ctx ctx = {
 		.cred = ff->cred,
-		.user_file = file,
 		.accessed = fuse_file_accessed,
 	};
 

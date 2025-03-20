@@ -6,7 +6,7 @@
 PHONY := __modinst
 __modinst:
 
-include include/config/auto.conf
+include $(objtree)/include/config/auto.conf
 include $(srctree)/scripts/Kbuild.include
 
 install-y :=
@@ -35,12 +35,12 @@ install-y += $(addprefix $(MODLIB)/, modules.builtin modules.builtin.modinfo)
 
 install-$(CONFIG_BUILTIN_MODULE_RANGES) += $(MODLIB)/modules.builtin.ranges
 
-$(addprefix $(MODLIB)/, modules.builtin modules.builtin.modinfo modules.builtin.ranges): $(MODLIB)/%: $(mixed-build-prefix)% FORCE
+$(addprefix $(MODLIB)/, modules.builtin modules.builtin.modinfo modules.builtin.ranges): $(MODLIB)/%: % FORCE
 	$(call cmd,install)
 
 endif
 
-modules := $(call read-file, $(MODORDER))
+modules := $(call read-file, modules.order)
 
 ifeq ($(KBUILD_EXTMOD),)
 dst := $(MODLIB)/kernel
@@ -59,7 +59,7 @@ suffix-$(CONFIG_MODULE_COMPRESS_XZ)	:= .xz
 suffix-$(CONFIG_MODULE_COMPRESS_ZSTD)	:= .zst
 endif
 
-modules := $(patsubst $(extmod_prefix)%.o, $(dst)/%.ko$(suffix-y), $(modules))
+modules := $(patsubst %.o, $(dst)/%.ko$(suffix-y), $(modules))
 ifneq ($(KBUILD_EXTMOD),)
 extmod_suffix := $(shell echo "${KBUILD_EXTMOD}" | md5sum | cut -d " " -f 1)
 modules += $(dst)/modules.order.$(extmod_suffix)
@@ -123,16 +123,15 @@ endif
 # Create necessary directories
 $(foreach dir, $(sort $(dir $(install-y))), $(shell mkdir -p $(dir)))
 
-$(dst)/%.ko: $(extmod_prefix)%.ko FORCE
+$(dst)/%.ko: %.ko FORCE
 	$(call cmd,install)
 	$(call cmd,strip)
 	$(call cmd,sign)
 
 ifneq ($(KBUILD_EXTMOD),)
-$(dst)/modules.order.$(extmod_suffix): $(MODORDER) FORCE
+$(dst)/modules.order.$(extmod_suffix): modules.order FORCE
 	$(call cmd,install)
-	@sed -e "s:^$(KBUILD_EXTMOD):$(INSTALL_MOD_DIR):g" \
-	     -e 's:^\(.*\)\.o$$:\1.ko:' \
+	@sed -e 's:^\(.*\)\.o$$:$(INSTALL_MOD_DIR)/\1.ko:' \
 	     -i $@
 endif
 
@@ -144,7 +143,7 @@ depmod: $(install-y)
 	$(call cmd,depmod)
 
 quiet_cmd_depmod = DEPMOD  $(MODLIB)
-      cmd_depmod = $(srctree)/scripts/depmod.sh $(KERNELRELEASE) $(mixed-build-prefix)
+      cmd_depmod = $(srctree)/scripts/depmod.sh $(KERNELRELEASE)
 endif
 
 else

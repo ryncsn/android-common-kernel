@@ -883,8 +883,8 @@ EXPORT_SYMBOL(transfer_args_to_stack);
  */
 static struct file *do_open_execat(int fd, struct filename *name, int flags)
 {
-	struct file *file;
 	int err;
+	struct file *file __free(fput) = NULL;
 	struct open_flags open_exec_flags = {
 		.open_flag = O_LARGEFILE | O_RDONLY | __FMODE_EXEC,
 		.acc_mode = MAY_EXEC,
@@ -909,18 +909,14 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
 	 * an invariant that all non-regular files error out before we get here.
 	 */
 	if (WARN_ON_ONCE(!S_ISREG(file_inode(file)->i_mode)) ||
-	    path_noexec(&file->f_path)) {
-		fput(file);
+	    path_noexec(&file->f_path))
 		return ERR_PTR(-EACCES);
-	}
 
 	err = deny_write_access(file);
-	if (err) {
-		fput(file);
+	if (err)
 		return ERR_PTR(err);
-	}
 
-	return file;
+	return no_free_ptr(file);
 }
 
 /**
@@ -998,7 +994,7 @@ static int exec_mmap(struct mm_struct *mm)
 	active_mm = tsk->active_mm;
 	tsk->active_mm = mm;
 	tsk->mm = mm;
-	mm_init_cid(mm);
+	mm_init_cid(mm, tsk);
 	/*
 	 * This prevents preemption while active_mm is being loaded and
 	 * it and mm are being updated, which could cause problems for
@@ -1196,16 +1192,6 @@ static int unshare_sighand(struct task_struct *me)
 	}
 	return 0;
 }
-
-char *__get_task_comm(char *buf, size_t buf_size, struct task_struct *tsk)
-{
-	task_lock(tsk);
-	/* Always NUL terminated and zero-padded */
-	strscpy_pad(buf, tsk->comm, buf_size);
-	task_unlock(tsk);
-	return buf;
-}
-EXPORT_SYMBOL_GPL(__get_task_comm);
 
 /*
  * These functions flushes out all traces of the currently running executable

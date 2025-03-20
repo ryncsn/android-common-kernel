@@ -59,6 +59,12 @@ Command Syntax
 
 		$ make -C /lib/modules/`uname -r`/build M=$PWD modules_install
 
+	Starting from Linux 6.13, you can use the -f option instead of -C. This
+	will avoid unnecessary change of the working directory. The external
+	module will be output to the directory where you invoke make.
+
+		$ make -f /lib/modules/`uname -r`/build/Makefile M=$PWD
+
 Options
 -------
 
@@ -66,7 +72,10 @@ Options
 	of the kernel output directory if the kernel was built in a separate
 	build directory.)
 
-	make -C $KDIR M=$PWD
+	You can optionally pass MO= option if you want to build the modules in
+	a separate directory.
+
+	make -C $KDIR M=$PWD [MO=$BUILD_DIR]
 
 	-C $KDIR
 		The directory that contains the kernel and relevant build
@@ -79,6 +88,9 @@ Options
 		The value given to "M" is the absolute path of the
 		directory where the external module (kbuild file) is
 		located.
+
+	MO=$BUILD_DIR
+		Specifies a separate output directory for the external module.
 
 Targets
 -------
@@ -105,10 +117,6 @@ Targets
 		/lib/modules/<kernel_release>/updates/, but a prefix may
 		be added with INSTALL_MOD_PATH (discussed in section
 		`Module Installation`_).
-
-	headers_install
-		Export headers in a format suitable for userspace. The default
-		location is $PWD/usr. INSTALL_HDR_PATH can change this path.
 
 	clean
 		Remove all generated files in the module directory only.
@@ -219,6 +227,21 @@ Separate Kbuild File and Makefile
 	consisting of several hundred lines, and here it really pays
 	off to separate the kbuild part from the rest.
 
+	Linux 6.13 and later support another way. The external module Makefile
+	can include the kernel Makefile directly, rather than invoking sub Make.
+
+	Example 3::
+
+		--> filename: Kbuild
+		obj-m  := 8123.o
+		8123-y := 8123_if.o 8123_pci.o
+
+		--> filename: Makefile
+		KDIR ?= /lib/modules/$(shell uname -r)/build
+		export KBUILD_EXTMOD := $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+		include $(KDIR)/Makefile
+
+
 Building Multiple Modules
 -------------------------
 
@@ -319,17 +342,6 @@ Several Subdirectories
 	absolute path is needed. $(src) provides the absolute path by
 	pointing to the directory where the currently executing kbuild
 	file is located.
-
-UAPI Headers Installation
--------------------------
-
-	External modules may export headers to userspace in a similar
-	fashion to the in-tree counterpart drivers. kbuild supports
-	running headers_install target in an out-of-tree. The location
-	where kbuild searches for headers is $(M)/include/uapi and
-	$(M)/arch/$(SRCARCH)/include/uapi.
-
-	See also Documentation/kbuild/headers_install.rst.
 
 
 Module Installation

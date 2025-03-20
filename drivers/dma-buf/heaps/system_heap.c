@@ -520,7 +520,7 @@ static struct dma_heap_ops system_uncached_heap_ops = {
 	.allocate = system_uncached_heap_not_initialized,
 };
 
-static int system_heap_create(void)
+static int __init system_heap_create(void)
 {
 	struct dma_heap_export_info exp_info;
 
