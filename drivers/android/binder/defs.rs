@@ -6,7 +6,7 @@ use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use kernel::{
     bindings::{self, *},
-    types::{AsBytes, FromBytes},
+    transmute::{AsBytes, FromBytes},
 };
 
 macro_rules! pub_no_prefix {

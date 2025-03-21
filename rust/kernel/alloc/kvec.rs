@@ -452,6 +452,58 @@ where
 
         Ok(())
     }
+
+    /// NOT UPSTREAM
+    /// Shortens the vector, keeping the first `len` elements and dropping the rest.
+    pub fn truncate(&mut self, len: usize) {
+        if len > self.len {
+            return;
+        }
+        // SAFETY: The vector was valid up to len, so we can make a slice out of the tail
+        // We can set the len to the new len because we know it's <= current.
+        // Dropping the trailing slice is OK because we had the only pointer, and there's no ref
+        unsafe {
+            let s = core::ptr::slice_from_raw_parts_mut(self.as_mut_ptr().add(len), self.len - len);
+            self.set_len(len);
+            core::ptr::drop_in_place(s);
+        }
+    }
+
+    /// NOT UPSTREAM
+    /// Return the last element by move, if available.
+    pub fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return None;
+        }
+        unsafe {
+            self.set_len(self.len - 1);
+            Some(core::ptr::read(self.as_ptr().add(self.len())))
+        }
+    }
+
+    /// NOT UPSTREAM
+    /// Remove the element at the provided index, returning it
+    pub fn remove(&mut self, idx: usize) -> T {
+        if idx >= self.len() {
+            panic!("Tried to remove beyond end of vector");
+        }
+        // SAFETY: It's inrange, so it won't wrap around or leave the object
+        let target = unsafe { self.as_mut_ptr().add(idx) };
+        // SAFETY: It's inbounds, so we can read it. We'll write over it,
+        // so it won't be double dropped.
+        let out = unsafe { ptr::read(target) };
+        // SAFETY: It's inrange, so it won't wrap around or leave the object
+        let base = unsafe { target.add(1) };
+        // SAFETY: Target range is similarly typed to source range, so alignments
+        // are acceptible, source range is all valid by vector invariants
+        // INVARIANT: We've already dropped the value we overwrite.
+        unsafe { ptr::copy(base, target, self.len() - idx - 1) };
+        // SAFETY: All of this is still initialized
+        // INVARIANT: We now no longer have two copies of the last object,
+        // so we won't let people double drop it.
+        unsafe { self.set_len(self.len() - 1) };
+        out
+    }
 }
 
 impl<T: Clone, A: Allocator> Vec<T, A> {

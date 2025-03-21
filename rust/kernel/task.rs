@@ -6,8 +6,8 @@
 
 use crate::{
     bindings,
-    mm::MmWithUser,
     ffi::{c_int, c_long, c_uint},
+    mm::MmWithUser,
     pid_namespace::PidNamespace,
     types::{ARef, NotThreadSafe, Opaque},
 };

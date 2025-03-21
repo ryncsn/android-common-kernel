@@ -19,9 +19,12 @@ use core::{
     marker::PhantomPinned,
     mem::{size_of, size_of_val, MaybeUninit},
     ptr,
+    ptr::NonNull,
 };
 
 use kernel::{
+    alloc::allocator::Kmalloc,
+    alloc::Allocator,
     bindings,
     error::Result,
     mm::{virt, Mm, MmWithUser},
@@ -31,8 +34,8 @@ use kernel::{
     str::CStr,
     sync::{Mutex, SpinLock},
     task::Pid,
-    types::ARef,
-    types::{FromBytes, Opaque},
+    transmute::FromBytes,
+    types::{ARef, Opaque},
     uaccess::UserSliceReader,
 };
 
@@ -71,9 +74,7 @@ impl Shrinker {
         }
 
         // SAFETY: The field is not yet used, so we can initialize it.
-        let ret = unsafe {
-            bindings::__list_lru_init(self.list_lru.get(), false, ptr::null_mut(), ptr::null_mut())
-        };
+        let ret = unsafe { bindings::__list_lru_init(self.list_lru.get(), false, ptr::null_mut()) };
         if ret != 0 {
             return Err(Error::from_errno(ret));
         }
@@ -293,17 +294,13 @@ impl ShrinkablePageRange {
         }
 
         let layout = Layout::array::<PageInfo>(num_pages).map_err(|_| ENOMEM)?;
-        // SAFETY: The layout has non-zero size.
-        let pages = unsafe { alloc::alloc::alloc(layout) as *mut PageInfo };
-        if pages.is_null() {
-            return Err(ENOMEM);
-        }
+        let pages = Kmalloc::alloc(layout, GFP_KERNEL)?.cast::<PageInfo>();
 
         // SAFETY: This just initializes the pages array.
         unsafe {
             let self_ptr = self as *const ShrinkablePageRange;
             for i in 0..num_pages {
-                let info = pages.add(i);
+                let info = pages.add(i).as_ptr();
                 ptr::addr_of_mut!((*info).range).write(self_ptr);
                 ptr::addr_of_mut!((*info).page).write(None);
                 let lru = ptr::addr_of_mut!((*info).lru);
@@ -317,11 +314,11 @@ impl ShrinkablePageRange {
             pr_debug!("Failed to register with vma: already registered");
             drop(inner);
             // SAFETY: The `pages` array was allocated with the same layout.
-            unsafe { alloc::alloc::dealloc(pages.cast(), layout) };
+            unsafe { Kmalloc::free(pages.cast(), layout) };
             return Err(EBUSY);
         }
 
-        inner.pages = pages;
+        inner.pages = pages.as_ptr();
         inner.size = num_pages;
         inner.vma_addr = vma.start();
 
@@ -641,12 +638,16 @@ impl PinnedDrop for ShrinkablePageRange {
         // `stable_trylock_mm`.
         drop(self.mm_lock.lock());
 
+        let Some(pages) = NonNull::new(pages) else {
+            return;
+        };
+
         // SAFETY: This computation did not overflow when allocating the pages array, so it will
         // not overflow this time.
         let layout = unsafe { Layout::array::<PageInfo>(size).unwrap_unchecked() };
 
         // SAFETY: The `pages` array was allocated with the same layout.
-        unsafe { alloc::alloc::dealloc(pages.cast(), layout) };
+        unsafe { Kmalloc::free(pages.cast(), layout) };
     }
 }
 
@@ -678,7 +679,6 @@ unsafe extern "C" fn rust_shrink_scan(
             fn rust_shrink_free_page_wrap(
                 item: *mut bindings::list_head,
                 list: *mut bindings::list_lru_one,
-                lock: *mut bindings::spinlock_t,
                 cb_arg: *mut core::ffi::c_void,
             ) -> bindings::lru_status;
         }
@@ -699,7 +699,6 @@ const LRU_REMOVED_ENTRY: bindings::lru_status = bindings::lru_status_LRU_REMOVED
 unsafe extern "C" fn rust_shrink_free_page(
     item: *mut bindings::list_head,
     lru: *mut bindings::list_lru_one,
-    lru_lock: *mut bindings::spinlock_t,
     _cb_arg: *mut c_void,
 ) -> bindings::lru_status {
     // Fields that should survive after unlocking the lru lock.
@@ -761,8 +760,8 @@ unsafe extern "C" fn rust_shrink_free_page(
         // `mm_mutex` which is kept alive by holding the lock.
     }
 
-    // SAFETY: The lru lock is locked when this method is called.
-    unsafe { bindings::spin_unlock(lru_lock) };
+    // TODO we no longer have the optimization of releasing the lru_lock here, because the
+    // API no longer makes it available to us
 
     if let Some(vma) = mmap_read.vma_lookup(vma_addr) {
         let user_page_addr = vma_addr + (page_index << PAGE_SHIFT);
@@ -776,8 +775,7 @@ unsafe extern "C" fn rust_shrink_free_page(
     drop(mm);
     drop(page);
 
-    // SAFETY: We just unlocked the lru lock, but it should be locked when we return.
-    unsafe { bindings::spin_lock(lru_lock) };
+    // TODO this is where we would re-acquire the lru_lock if the API allowed it
 
     LRU_REMOVED_ENTRY
 }

@@ -15,7 +15,8 @@ use kernel::{
     sync::poll::PollTable,
     sync::Arc,
     task::Pid,
-    types::{AsBytes, ForeignOwnable},
+    transmute::AsBytes,
+    types::ForeignOwnable,
     uaccess::UserSliceWriter,
 };
 
@@ -170,7 +171,7 @@ impl<T: ListArcSafe> DTRWrap<T> {
         })
     }
 
-    fn arc_try_new(val: T) -> Result<DLArc<T>, alloc::alloc::AllocError> {
+    fn arc_try_new(val: T) -> Result<DLArc<T>, kernel::alloc::AllocError> {
         ListArc::pin_init(
             try_pin_init!(Self {
                 links <- ListLinksSelfPtr::new(),
@@ -178,7 +179,7 @@ impl<T: ListArcSafe> DTRWrap<T> {
             }),
             GFP_KERNEL,
         )
-        .map_err(|_| alloc::alloc::AllocError)
+        .map_err(|_| kernel::alloc::AllocError)
     }
 
     fn arc_pin_init(init: impl PinInit<T>) -> Result<DLArc<T>, kernel::error::Error> {

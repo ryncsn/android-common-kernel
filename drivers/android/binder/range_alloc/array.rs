@@ -22,7 +22,7 @@ pub(super) struct ArrayRangeAllocator<T> {
     /// store the free ranges.
     ///
     /// Sorted by offset.
-    pub(super) ranges: Vec<Range<T>>,
+    pub(super) ranges: KVec<Range<T>>,
     size: usize,
     free_oneway_space: usize,
 }
@@ -235,13 +235,13 @@ impl<T> ArrayRangeAllocator<T> {
 }
 
 pub(crate) struct EmptyArrayAlloc<T> {
-    ranges: Vec<Range<T>>,
+    ranges: KVec<Range<T>>,
 }
 
 impl<T> EmptyArrayAlloc<T> {
     pub(crate) fn try_new(capacity: usize) -> Result<Self> {
         Ok(Self {
-            ranges: Vec::with_capacity(capacity, GFP_KERNEL)?,
+            ranges: KVec::with_capacity(capacity, GFP_KERNEL)?,
         })
     }
 }
@@ -253,7 +253,7 @@ impl<T> EmptyArrayAlloc<T> {
 ///
 /// [`push_within_capacity`]: https://github.com/rust-lang/rust/issues/100486
 /// [alloc]: https://lore.kernel.org/r/20240328013603.206764-1-wedsonaf@gmail.com
-fn insert_within_capacity<T>(vec: &mut Vec<T>, index: usize, element: T) {
+fn insert_within_capacity<T>(vec: &mut KVec<T>, index: usize, element: T) {
     let len = vec.len();
 
     if len == vec.capacity() {

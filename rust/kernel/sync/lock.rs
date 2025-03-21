@@ -152,6 +152,13 @@ impl<T: ?Sized, B: Backend> Lock<T, B> {
         // that `init` was called.
         unsafe { B::try_lock(self.state.get()).map(|state| Guard::new(self, state)) }
     }
+
+    /// Get a raw pointer to the data without touching the lock.
+    ///
+    /// It is up to the user to make sure that the pointer is used correctly.
+    pub fn get_ptr(&self) -> *mut T {
+        self.data.get()
+    }
 }
 
 /// A lock guard.

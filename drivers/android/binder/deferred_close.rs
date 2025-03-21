@@ -20,7 +20,7 @@ use kernel::{
 /// Additional motivation can be found in commit 80cd795630d6 ("binder: fix use-after-free due to
 /// ksys_close() during fdget()") and in the comments on `binder_do_fd_close`.
 pub(crate) struct DeferredFdCloser {
-    inner: Box<DeferredFdCloserInner>,
+    inner: KBox<DeferredFdCloserInner>,
 }
 
 /// SAFETY: This just holds an allocation with no real content, so there's no safety issue with
@@ -43,7 +43,7 @@ impl DeferredFdCloser {
     pub(crate) fn new(flags: Flags) -> Result<Self, AllocError> {
         Ok(Self {
             // INVARIANT: The `file` pointer is null, so the type invariant does not apply.
-            inner: Box::new(
+            inner: KBox::new(
                 DeferredFdCloserInner {
                     twork: MaybeUninit::uninit(),
                     file: core::ptr::null_mut(),
@@ -75,7 +75,7 @@ impl DeferredFdCloser {
         //
         // Until we convert it back to a `Box`, there are no aliasing requirements on this
         // pointer.
-        let inner = Box::into_raw(self.inner);
+        let inner = KBox::into_raw(self.inner);
 
         // The `callback_head` field is first in the struct, so this cast correctly gives us a
         // pointer to the field.
@@ -107,7 +107,7 @@ impl DeferredFdCloser {
         if res != 0 {
             // SAFETY: Scheduling the task work failed, so we still have ownership of the box, so
             // we may destroy it.
-            unsafe { drop(Box::from_raw(inner)) };
+            unsafe { drop(KBox::from_raw(inner)) };
 
             return Err(DeferredFdCloseError::TaskWorkUnavailable);
         }
@@ -170,7 +170,7 @@ impl DeferredFdCloser {
     /// file pointer is non-null, then it must be okay to release the refcount by calling `fput`.
     unsafe extern "C" fn do_close_fd(inner: *mut bindings::callback_head) {
         // SAFETY: The caller just passed us ownership of this box.
-        let inner = unsafe { Box::from_raw(inner.cast::<DeferredFdCloserInner>()) };
+        let inner = unsafe { KBox::from_raw(inner.cast::<DeferredFdCloserInner>()) };
         if !inner.file.is_null() {
             // SAFETY: By the type invariants, we own a refcount to this file, and the caller
             // guarantees that dropping the refcount now is okay.
