@@ -114,8 +114,15 @@ if [ "$ARCH" == "arm64" ] ; then
     # is removed in the new kernel. Without removing all artifacts, the FIT
     # image crated later would contain the old DTB taken from previous
     # build.
-    DEVICETREES=$(find ./arch/arm64/boot/dts -name \*$BUILD_FAMILY_NAME\*.dtb)
-    DEVICETREE_ARTIFACTS=$(find ./arch/arm64/boot/dts -name \*$BUILD_FAMILY_NAME\*.dtb.\*)
+
+    # Staryu boards use dts files with corsola prefix.
+    if [ $BUILD_FAMILY_NAME = "staryu" ] ; then
+        DEVICETREES=$(find ./arch/arm64/boot/dts -name \*corsola\*.dtb)
+        DEVICETREE_ARTIFACTS=$(find ./arch/arm64/boot/dts -name \*corsola\*.dtb.\*)
+    else
+        DEVICETREES=$(find ./arch/arm64/boot/dts -name \*$BUILD_FAMILY_NAME\*.dtb)
+        DEVICETREE_ARTIFACTS=$(find ./arch/arm64/boot/dts -name \*$BUILD_FAMILY_NAME\*.dtb.\*)
+    fi
     rm -rf $DEVICETREES $DEVICETREE_ARTIFACTS
     # XXX: Under arm64 arch, in a later step we replace kernel image with a FIT
     # image, which extends the kernel with devices trees. Running the script
@@ -140,7 +147,13 @@ if [ "$ARCH" == "arm64" ] ; then
     # devicetrees for this build family.
     # TODO(svenva@) generate-its-script.sh is really old and generates a legacy FIT.
     #               upgrade to modern FIT format which is much more compact.
-    DEVICETREES=$(find ./arch/arm64/boot/dts -name \*$BUILD_FAMILY_NAME\*.dtb)
+
+    # Staryu boards use dts files with corsola prefix.
+    if [ $BUILD_FAMILY_NAME = "staryu" ] ; then
+        DEVICETREES=$(find ./arch/arm64/boot/dts -name \*corsola\*.dtb)
+    else
+        DEVICETREES=$(find ./arch/arm64/boot/dts -name \*$BUILD_FAMILY_NAME\*.dtb)
+    fi
     ./chromeos/scripts/generate-its-script.sh -a arm64 -c lz4 -d $(pwd) arch/$ARCH/boot/$ZIMAGE \
         $DEVICETREES | dtc -I dts -O dtb -p 1024 > arch/$ARCH/boot/$ZIMAGE.fit
     mv arch/$ARCH/boot/$ZIMAGE.fit arch/$ARCH/boot/$ZIMAGE
