@@ -1293,7 +1293,7 @@ kernel_build(
         "modules",
     ],
     makefile = ":Makefile",
-    post_defconfig_fragments = [":gki/aarch64/defconfig/allmodconfig"],
+    post_defconfig_fragments = ["arch/arm64/configs/allmodconfig.fragment"],
     visibility = ["//visibility:private"],
 )
 
@@ -1311,7 +1311,7 @@ kernel_build(
         "modules",
     ],
     makefile = ":Makefile",
-    post_defconfig_fragments = [":gki/x86_64/defconfig/allmodconfig"],
+    post_defconfig_fragments = ["arch/x86/configs/allmodconfig.fragment"],
     visibility = ["//visibility:private"],
 )
 
@@ -1339,7 +1339,7 @@ kernel_build(
         "modules",
     ],
     makefile = ":Makefile",
-    post_defconfig_fragments = [":gki/arm/defconfig/allmodconfig"],
+    post_defconfig_fragments = ["arch/arm/configs/allmodconfig.fragment"],
     visibility = ["//visibility:private"],
 )
 
