@@ -248,6 +248,15 @@ config MTK_ADSP_MBOX
           between processors with ADSP. It will place the message to share
 	  buffer and will access the ipc control.
 
+config MTK_APU_MBOX
+	tristate "MediaTek APU Mailbox Support"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	help
+	  Say yes here to add support for the MediaTek APU Mailbox
+	  driver. The mailbox implementation provides access from the
+	  application processor to the MediaTek AI Processing Unit.
+	  If unsure say N.
+
 config MTK_CMDQ_MBOX
 	tristate "MediaTek CMDQ Mailbox Support"
 	depends on ARCH_MEDIATEK || COMPILE_TEST
@@ -257,6 +266,15 @@ config MTK_CMDQ_MBOX
 	  mailbox driver. The CMDQ is used to help read/write registers with
 	  critical time limitation, such as updating display configuration
 	  during the vblank.
+
+config MTK_TINYSYS_MBOX
+	tristate "MediaTek TINYSYS MBOX Mailbox Support"
+	depends on ARM || ARM64
+	help
+	Say yes here to add support for the MediaTek TINYSYS mailbox driver.
+	  This uses MTK MBOX driver to communicate with remote processors
+	  base on ipic framework. It provide channels, controller creation
+	  and send operations.
 
 config ZYNQMP_IPI_MBOX
 	tristate "Xilinx ZynqMP IPI Mailbox"

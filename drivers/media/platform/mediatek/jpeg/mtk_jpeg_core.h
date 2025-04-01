@@ -34,6 +34,18 @@
 
 #define MTK_JPEG_MAX_EXIF_SIZE	(64 * 1024)
 
+#define JPG_REG_CORE0_GUSER_ID				0x380d0000
+#define JPG_REG_CORE1_GUSER_ID				0x388d0000
+#define JPG_REG_GUSER_ID_MASK				0x7
+#define JPG_REG_GUSER_ID_DEC_SID			0x4
+#define JPG_REG_GUSER_ID_ENC_SID			0x5
+#define JPG_REG_DEC_GUSER_ID_SHIFT			8
+#define JPG_REG_ENC_GUSER_ID_SHIFT			4
+#define GUSER_ID_MAPRANGE					4
+
+
+
+
 /**
  * enum mtk_jpeg_ctx_state - states of the context state machine
  * @MTK_JPEG_INIT:		current state is initialized
@@ -62,6 +74,7 @@ enum mtk_jpeg_ctx_state {
  * @cap_q_default_fourcc:	capture queue default fourcc
  * @multi_core:		mark jpeg hw is multi_core or not
  * @jpeg_worker:		jpeg dec or enc worker
+ * @support_34bit:	flag to check if support dma_address 34bit
  */
 struct mtk_jpeg_variant {
 	struct clk_bulk_data *clks;
@@ -77,14 +90,16 @@ struct mtk_jpeg_variant {
 	u32 out_q_default_fourcc;
 	u32 cap_q_default_fourcc;
 	bool multi_core;
+	u32 max_hw_count;
 	void (*jpeg_worker)(struct work_struct *work);
+	bool support_34bit;
 };
 
 struct mtk_jpeg_src_buf {
-	u32 frame_num;
 	struct vb2_v4l2_buffer b;
 	struct list_head list;
 	u32 bs_size;
+	u32 frame_num;
 	struct mtk_jpeg_dec_param dec_param;
 
 	struct mtk_jpeg_ctx *curr_ctx;
@@ -301,6 +316,7 @@ struct mtk_jpeg_ctx {
 	/* spinlock protecting the encode done buffer */
 	spinlock_t done_queue_lock;
 	u32 last_done_frame_num;
+	atomic_t buf_list_cnt;
 };
 
 #endif /* _MTK_JPEG_CORE_H */

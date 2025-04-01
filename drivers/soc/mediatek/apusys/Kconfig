@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config MTK_APUSYS_SUPPORT
+	tristate "MediaTek APUSYS driver"
+	depends on ARM || ARM64
+	select REGMAP
+	select MAILBOX
+	select MTK_APU_MBOX
+	select MTK_SCP
+	select PM_DEVFREQ
+	help
+	  Enable Mediatek APUSYS feature for centralize control.
+	  Middleware and APU scheduler will control memory,
+	  QoS, and normal/deadline command queue in central layer.
+	  Support multiple, multicore APU command scheduling and
+	  execution in low level driver.

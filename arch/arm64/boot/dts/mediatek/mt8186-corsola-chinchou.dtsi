@@ -1,89 +1,13 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /*
- * Copyright 2023 Google LLC
+ * Copyright 2024 Google LLC
  */
 
 /dts-v1/;
 #include "mt8186-corsola.dtsi"
 
 / {
-	tboard_thermistor1: thermal-sensor1 {
-		compatible = "generic-adc-thermal";
-		#thermal-sensor-cells = <0>;
-		io-channels = <&auxadc 0>;
-		io-channel-names = "sensor-channel";
-		temperature-lookup-table = <    (-5000) 1491
-						0 1413
-						5000 1324
-						10000 1225
-						15000 1120
-						20000 1012
-						25000 900
-						30000 797
-						35000 698
-						40000 607
-						45000 525
-						50000 451
-						55000 386
-						60000 330
-						65000 282
-						70000 241
-						75000 206
-						80000 176
-						85000 151
-						90000 129
-						95000 111
-						100000 96
-						105000 83
-						110000 72
-						115000 62
-						120000 54
-						125000 47>;
-	};
-
-	tboard_thermistor2: thermal-sensor2 {
-		compatible = "generic-adc-thermal";
-		#thermal-sensor-cells = <0>;
-		io-channels = <&auxadc 1>;
-		io-channel-names = "sensor-channel";
-		temperature-lookup-table = <    (-5000) 1491
-						0 1413
-						5000 1324
-						10000 1225
-						15000 1120
-						20000 1012
-						25000 900
-						30000 797
-						35000 698
-						40000 607
-						45000 525
-						50000 451
-						55000 386
-						60000 330
-						65000 282
-						70000 241
-						75000 206
-						80000 176
-						85000 151
-						90000 129
-						95000 111
-						100000 96
-						105000 83
-						110000 72
-						115000 62
-						120000 54
-						125000 47>;
-	};
-
-	pp1800_tchscr_report_disable: regulator-pp1800-tchscr-report-disable {
-		compatible = "regulator-fixed";
-		regulator-name = "pp1800_tchscr_report_disable";
-		pinctrl-names = "default";
-		enable-active-low;
-		regulator-boot-on;
-		pinctrl-0 = <&touch_pin_report>;
-		gpio = <&pio 37 GPIO_ACTIVE_LOW>;
-	};
+	/delete-node/ speaker-codec;
 
 	pp1000_edpbrdg: regulator-pp1000-edpbrdg {
 		compatible = "regulator-fixed";
@@ -117,14 +41,15 @@
 		gpio = <&pio 31 GPIO_ACTIVE_HIGH>;
 		vin-supply = <&pp3300_z2>;
 	};
-};
 
-&rt5682s {
-	status = "disabled";
-};
-
-&rt1019p {
-	status = "disabled";
+	pp1800_tchscr_report_disable: regulator-pp1800-tchscr-report-disable {
+		compatible = "regulator-fixed";
+		regulator-name = "pp1800_tchscr_report_disable";
+		pinctrl-names = "default";
+		regulator-boot-on;
+		pinctrl-0 = <&touch_pin_report>;
+		gpio = <&pio 37 GPIO_ACTIVE_LOW>;
+	};
 };
 
 &dsi_out {
@@ -139,31 +64,33 @@
 		reg = <0x58>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&anx7625_pins>;
-		panel_flags = <1>;
 		enable-gpios = <&pio 96 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&pio 98 GPIO_ACTIVE_HIGH>;
 		vdd10-supply = <&pp1000_edpbrdg>;
 		vdd18-supply = <&pp1800_edpbrdg_dx>;
 		vdd33-supply = <&pp3300_edp_dx>;
-		#address-cells = <1>;
-		#size-cells = <0>;
 		analogix,lane0-swing = /bits/ 8 <0x70 0x30>;
 		analogix,lane1-swing = /bits/ 8 <0x70 0x30>;
 
-		port@0 {
-			reg = <0>;
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
 
-			anx7625_in: endpoint {
-				remote-endpoint = <&dsi_out>;
-				data-lanes = <0 1 2 3>;
+			port@0 {
+				reg = <0>;
+
+				anx7625_in: endpoint {
+					remote-endpoint = <&dsi_out>;
+					data-lanes = <0 1 2 3>;
+				};
 			};
-		};
 
-		port@1 {
-			reg = <1>;
+			port@1 {
+				reg = <1>;
 
-			anx7625_out: endpoint {
-				remote-endpoint = <&panel_in>;
+				anx7625_out: endpoint {
+					remote-endpoint = <&panel_in>;
+				};
 			};
 		};
 
@@ -184,24 +111,31 @@
 };
 
 &i2c2 {
-	trackpad@15 {
+	/delete-node/ trackpad@15;
+
+	touchpad@15 {
 		compatible = "hid-over-i2c";
+		reg = <0x15>;
+		interrupts-extended = <&pio 11 IRQ_TYPE_LEVEL_LOW>;
 		post-power-on-delay-ms = <10>;
 		hid-descr-addr = <0x0001>;
 		vdd-supply = <&pp3300_s3>;
+		wakeup-source;
 	};
 };
 
 &i2c5 {
 	clock-frequency = <400000>;
+	/delete-node/ codec@1a;
 
 	rt5650: rt5650@1a {
 		compatible = "realtek,rt5650";
 		reg = <0x1a>;
 		avdd-supply = <&mt6366_vio18_reg>;
+		cpvdd-supply = <&mt6366_vio18_reg>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&rt1019p_pins_default>;
-		cbj-sleeve-gpio = <&pio 150 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&speaker_codec_pins_default>;
+		cbj-sleeve-gpios = <&pio 150 GPIO_ACTIVE_HIGH>;
 		interrupt-parent = <&pio>;
 		interrupts = <17 IRQ_TYPE_EDGE_BOTH>;
 		#sound-dai-cells = <0>;
@@ -210,67 +144,15 @@
 	};
 };
 
-&mmc1_pins_default {
-	pins-clk {
-		drive-strength = <MTK_DRIVE_8mA>;
+&i2c_tunnel {
+	/delete-node/ sbs-battery@b;
+
+	battery: sbs-battery@f {
+		compatible = "sbs,sbs-battery";
+		reg = <0xf>;
+		sbs,i2c-retry-count = <2>;
+		sbs,poll-retry-count = <1>;
 	};
-
-	pins-cmd-dat {
-		drive-strength = <MTK_DRIVE_8mA>;
-	};
-};
-
-&mmc1_pins_uhs {
-	pins-clk {
-		drive-strength = <MTK_DRIVE_8mA>;
-	};
-
-	pins-cmd-dat {
-		drive-strength = <MTK_DRIVE_8mA>;
-	};
-};
-
-&sound {
-	status = "okay";
-
-	compatible = "mediatek,mt8186-mt6366-rt5650-sound";
-	mediatek,adsp = <&adsp>;
-
-	audio-routing =
-		"Headphone", "HPOL",
-		"Headphone", "HPOR",
-		"HDMI1", "TX";
-
-	hs-playback-dai-link {
-		codec {
-			sound-dai = <&rt5650>;
-		};
-	};
-
-	hs-capture-dai-link {
-		codec {
-			sound-dai = <&rt5650>;
-		};
-	};
-
-	spk-share-dai-link {
-	};
-
-	spk-hdmi-playback-dai-link {
-		codec {
-			sound-dai = <&it6505dptx>;
-		};
-	};
-};
-
-&wifi_enable_pin {
-	pins-wifi-enable {
-		pinmux = <PINMUX_GPIO51__FUNC_GPIO51>;
-	};
-};
-
-&wifi_pwrseq {
-	reset-gpios = <&pio 51 GPIO_ACTIVE_LOW>;
 };
 
 &keyboard_controller {
@@ -316,94 +198,46 @@
 	>;
 };
 
-&thermal_zones {
-	cpu-ntc {
-		polling-delay = <1000>; /* milliseconds */
-		polling-delay-passive = <0>; /* milliseconds */
-		thermal-sensors = <&tboard_thermistor1>;
+&mmc1_pins_default {
+	pins-clk {
+		drive-strength = <MTK_DRIVE_8mA>;
 	};
 
-	pmic-ntc {
-		polling-delay = <1000>; /* milliseconds */
-		polling-delay-passive = <50>; /* milliseconds */
-		thermal-sensors = <&tboard_thermistor2>;
-		sustainable-power = <1500>;
-
-		trips {
-			pmic_temp_alert0: trip-point@0 {
-				temperature = <50000>;
-				hysteresis = <2000>;
-				type = "passive";
-			};
-
-			pmic_temp_alert1: target@1 {
-				temperature = <60000>;
-				hysteresis = <2000>;
-				type = "passive";
-			};
-
-			pmic_ntc_crit: pmic-ntc-crit@0 {
-				temperature = <80000>;
-				hysteresis = <2000>;
-				type = "critical";
-			};
-		};
-
-		cooling-maps {
-			map0 {
-				trip = <&pmic_temp_alert1>;
-				cooling-device = <&cpu0
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>,
-						<&cpu1
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>,
-						<&cpu2
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>,
-						<&cpu3
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>,
-						<&cpu4
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>,
-						<&cpu5
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>;
-				contribution = <4096>;
-			};
-
-			map1 {
-				trip = <&pmic_temp_alert1>;
-				cooling-device = <&cpu6
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>,
-						<&cpu7
-					THERMAL_NO_LIMIT
-					THERMAL_NO_LIMIT>;
-				contribution = <1024>;
-			};
-		};
+	pins-cmd-dat {
+		drive-strength = <MTK_DRIVE_8mA>;
 	};
 };
 
-&pio {
-	touch_pin_report: pin-report {
-		pinmux = <PINMUX_GPIO37__FUNC_GPIO37>;
-		output-low;
+&mmc1_pins_uhs {
+	pins-clk {
+		drive-strength = <MTK_DRIVE_8mA>;
 	};
 
+	pins-cmd-dat {
+		drive-strength = <MTK_DRIVE_8mA>;
+	};
+};
+
+&pen_insert {
+	wakeup-event-action = <EV_ACT_ANY>;
+};
+
+&pio {
 	anx7625_pins: anx7625-pins {
-		pins1 {
-			pinmux = <PINMUX_GPIO96__FUNC_GPIO96>,
-			<PINMUX_GPIO98__FUNC_GPIO98>;
+		pins-int {
+			pinmux = <PINMUX_GPIO9__FUNC_GPIO9>;
+			input-enable;
+			bias-disable;
+		};
+
+		pins-reset {
+			pinmux = <PINMUX_GPIO98__FUNC_GPIO98>;
 			output-low;
 		};
 
-		pins2 {
-			pinmux = <PINMUX_GPIO9__FUNC_GPIO9>;
-			input-enable;
-			bias-pull-up;
+		pins-power-en {
+			pinmux = <PINMUX_GPIO96__FUNC_GPIO96>;
+			output-low;
 		};
 	};
 
@@ -427,19 +261,61 @@
 			output-low;
 		};
 	};
-};
 
-&i2c_tunnel {
-	/delete-node/ sbs-battery@b;
-
-	battery: sbs-battery@f {
-		compatible = "sbs,sbs-battery";
-		reg = <0xf>;
-		sbs,i2c-retry-count = <2>;
-		sbs,poll-retry-count = <1>;
+	touch_pin_report: pin-report-pins {
+		pins-touch-en {
+			pinmux = <PINMUX_GPIO37__FUNC_GPIO37>;
+			output-low;
+		};
 	};
 };
 
-&pen_insert {
-	wakeup-event-action = <EV_ACT_ANY>;
+&sound {
+	compatible = "mediatek,mt8186-mt6366-rt5650-sound";
+	model = "mt8186_rt5650";
+	mediatek,adsp = <&adsp>;
+
+	audio-routing =
+		"Headphone", "HPOL",
+		"Headphone", "HPOR",
+		"IN1P", "Headset Mic",
+		"IN1N", "Headset Mic",
+		"Speakers", "SPOL",
+		"Speakers", "SPOR",
+		"HDMI1", "TX";
+
+	hs-playback-dai-link {
+		codec {
+			sound-dai = <&rt5650>;
+		};
+	};
+
+	hs-capture-dai-link {
+		codec {
+			sound-dai = <&rt5650>;
+		};
+	};
+
+	spk-share-dai-link {
+	};
+
+	spk-hdmi-playback-dai-link {
+		codec {
+			sound-dai = <&it6505dptx>;
+		};
+	};
+};
+
+&touchscreen_pins {
+	/delete-node/ pins-report-sw;
+};
+
+&wifi_enable_pin {
+	pins-wifi-enable {
+		pinmux = <PINMUX_GPIO51__FUNC_GPIO51>;
+	};
+};
+
+&wifi_pwrseq {
+	reset-gpios = <&pio 51 GPIO_ACTIVE_LOW>;
 };

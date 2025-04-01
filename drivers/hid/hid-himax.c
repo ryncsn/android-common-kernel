@@ -2166,7 +2166,7 @@ static int himax_mcu_tp_info_check(struct himax_ts_data *ts)
 }
 
 /**
- * himax_mcu_resned_cmd_func() - Resend command collection
+ * himax_mcu_resend_cmd_func() - Resend command collection
  * @ts: Himax touch screen data
  *
  * This function is used to collect commands that need to be resent to TPIC after
@@ -5342,6 +5342,12 @@ static const struct of_device_id himax_table[] = {
 MODULE_DEVICE_TABLE(of, himax_table);
 #endif
 
+static const struct spi_device_id himax_spi_id[] = {
+	{ "hx83102j" },
+	{ },
+};
+MODULE_DEVICE_TABLE(spi, himax_spi_id);
+
 static struct spi_driver himax_hid_over_spi_driver = {
 	.driver = {
 		.name =		"hx83102j",
@@ -5350,6 +5356,7 @@ static struct spi_driver himax_hid_over_spi_driver = {
 		.of_match_table = of_match_ptr(himax_table),
 #endif
 	},
+	.id_table =	himax_spi_id,
 	.probe =	himax_spi_drv_probe,
 	.remove =	himax_spi_drv_remove,
 	.shutdown =	himax_shutdown,

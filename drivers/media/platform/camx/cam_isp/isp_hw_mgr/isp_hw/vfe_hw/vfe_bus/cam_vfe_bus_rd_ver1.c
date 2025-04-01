@@ -955,7 +955,8 @@ static int cam_vfe_bus_init_hw(void *hw_priv,
 		cam_vfe_bus_rd_ver1_handle_irq,
 		NULL,
 		NULL,
-		NULL);
+		NULL,
+		CAM_IRQ_CONTROLLER_VFE_BUS);
 
 	if (bus_priv->irq_handle <= 0) {
 		CAM_ERR(CAM_ISP, "Failed to subscribe BUS IRQ");
@@ -995,7 +996,7 @@ static int cam_vfe_bus_deinit_hw(void *hw_priv,
 	if (bus_priv->error_irq_handle) {
 		rc = cam_irq_controller_unsubscribe_irq(
 			bus_priv->common_data.bus_irq_controller,
-			bus_priv->error_irq_handle);
+			bus_priv->error_irq_handle, CAM_IRQ_CONTROLLER_VFE_BUS);
 		if (rc)
 			CAM_ERR(CAM_ISP,
 				"Failed to unsubscribe error irq rc=%d", rc);
@@ -1006,7 +1007,8 @@ static int cam_vfe_bus_deinit_hw(void *hw_priv,
 	if (bus_priv->irq_handle) {
 		rc = cam_irq_controller_unsubscribe_irq(
 			bus_priv->common_data.vfe_irq_controller,
-			bus_priv->irq_handle);
+			bus_priv->irq_handle,
+			CAM_IRQ_CONTROLLER_VFE_BUS);
 		if (rc)
 			CAM_ERR(CAM_ISP,
 				"Failed to unsubscribe irq rc=%d", rc);

@@ -3584,6 +3584,15 @@ static void rtw89_pci_l1ss_cfg(struct rtw89_dev *rtwdev)
 		rtw89_pci_l1ss_set(rtwdev, true);
 }
 
+static void rtw89_pci_cpl_timeout_cfg(struct rtw89_dev *rtwdev)
+{
+	struct rtw89_pci *rtwpci = (struct rtw89_pci *)rtwdev->priv;
+	struct pci_dev *pdev = rtwpci->pdev;
+
+	pcie_capability_set_word(pdev, PCI_EXP_DEVCTL2,
+				 PCI_EXP_DEVCTL2_COMP_TMOUT_DIS);
+}
+
 static int rtw89_pci_poll_io_idle(struct rtw89_dev *rtwdev)
 {
 	int ret = 0;
@@ -3762,6 +3771,14 @@ static void rtw89_pci_l2_hci_ldo(struct rtw89_dev *rtwdev)
 				    RTW89_PCIE_BIT_CFG_RST_MSTATE);
 }
 
+void rtw89_pci_basic_cfg(struct rtw89_dev *rtwdev, bool resume)
+{
+	rtw89_pci_filter_out(rtwdev);
+	rtw89_pci_cpl_timeout_cfg(rtwdev);
+	rtw89_pci_link_cfg(rtwdev);
+	rtw89_pci_l1ss_cfg(rtwdev);
+}
+
 static int __maybe_unused rtw89_pci_resume(struct device *dev)
 {
 	struct ieee80211_hw *hw = dev_get_drvdata(dev);
@@ -3783,9 +3800,8 @@ static int __maybe_unused rtw89_pci_resume(struct device *dev)
 				  B_AX_SEL_REQ_ENTR_L1);
 	}
 	rtw89_pci_l2_hci_ldo(rtwdev);
-	rtw89_pci_filter_out(rtwdev);
-	rtw89_pci_link_cfg(rtwdev);
-	rtw89_pci_l1ss_cfg(rtwdev);
+
+	rtw89_pci_basic_cfg(rtwdev, true);
 
 	return 0;
 }
@@ -3885,9 +3901,7 @@ int rtw89_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_clear_resource;
 	}
 
-	rtw89_pci_filter_out(rtwdev);
-	rtw89_pci_link_cfg(rtwdev);
-	rtw89_pci_l1ss_cfg(rtwdev);
+	rtw89_pci_basic_cfg(rtwdev, false);
 
 	rtw89_core_napi_init(rtwdev);
 

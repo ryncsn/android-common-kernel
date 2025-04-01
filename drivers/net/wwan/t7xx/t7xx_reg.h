@@ -107,12 +107,12 @@ enum host_event_e {
 };
 
 #define T7XX_PCIE_MISC_DEV_STATUS		0x0d1c
+#define MISC_STAGE_MASK				GENMASK(2, 0)
+#define MISC_RESET_TYPE_PLDR			BIT(26)
 #define MISC_RESET_TYPE_FLDR			BIT(27)
 #define MISC_RESET_TYPE_PLDR			BIT(26)
-#define MISC_DEV_STATUS_MASK			GENMASK(15, 0)
-#define MISC_DEV_STATUS_INVALID			GENMASK(15, 0)
 #define MISC_LK_EVENT_MASK			GENMASK(11, 8)
-#define HOST_EVENT_MASK			GENMASK(31, 28)
+#define HOST_EVENT_MASK				GENMASK(31, 28)
 
 enum lk_event_id {
 	LK_EVENT_NORMAL = 0,
@@ -120,8 +120,6 @@ enum lk_event_id {
 	LK_EVENT_CREATE_POST_DL_PORT = 2,
 	LK_EVENT_RESET = 7,
 };
-
-#define MISC_STAGE_MASK				GENMASK(2, 0)
 
 enum t7xx_device_stage {
 	T7XX_DEV_STAGE_INIT = 0,

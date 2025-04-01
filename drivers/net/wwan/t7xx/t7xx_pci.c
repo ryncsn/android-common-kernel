@@ -38,11 +38,10 @@
 #include "t7xx_mhccif.h"
 #include "t7xx_modem_ops.h"
 #include "t7xx_pci.h"
-#include "t7xx_pci_rescan.h"
 #include "t7xx_pcie_mac.h"
-#include "t7xx_port_devlink.h"
 #include "t7xx_reg.h"
 #include "t7xx_state_monitor.h"
+#include "t7xx_port_proxy.h"
 
 #define T7XX_PCI_IREG_BASE		0
 #define T7XX_PCI_EREG_BASE		2
@@ -54,31 +53,142 @@
 #define PM_RESOURCE_POLL_TIMEOUT_US	10000
 #define PM_RESOURCE_POLL_STEP_US	100
 
+static const char * const t7xx_mode_names[] = {
+	[T7XX_UNKNOWN] = "unknown",
+	[T7XX_READY] = "ready",
+	[T7XX_RESET] = "reset",
+	[T7XX_FASTBOOT_SWITCHING] = "fastboot_switching",
+	[T7XX_FASTBOOT_DOWNLOAD] = "fastboot_download",
+	[T7XX_FASTBOOT_DUMP] = "fastboot_dump",
+};
+
+static_assert(ARRAY_SIZE(t7xx_mode_names) == T7XX_MODE_LAST);
+
+static ssize_t t7xx_mode_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct t7xx_pci_dev *t7xx_dev;
+	struct pci_dev *pdev;
+	enum t7xx_mode mode;
+	int index = 0;
+
+	pdev = to_pci_dev(dev);
+	t7xx_dev = pci_get_drvdata(pdev);
+	if (!t7xx_dev)
+		return -ENODEV;
+
+	mode = READ_ONCE(t7xx_dev->mode);
+
+	index = sysfs_match_string(t7xx_mode_names, buf);
+	if (index == mode)
+		return -EBUSY;
+
+	if (index == T7XX_FASTBOOT_SWITCHING) {
+		if (mode == T7XX_FASTBOOT_DOWNLOAD)
+			return count;
+
+		WRITE_ONCE(t7xx_dev->mode, T7XX_FASTBOOT_SWITCHING);
+		pm_runtime_resume(dev);
+		t7xx_reset_device(t7xx_dev, FASTBOOT);
+	} else if (index == T7XX_RESET) {
+		pm_runtime_resume(dev);
+		t7xx_reset_device(t7xx_dev, PLDR);
+	}
+
+	return count;
+};
+
+static ssize_t t7xx_mode_show(struct device *dev,
+			      struct device_attribute *attr,
+			      char *buf)
+{
+	enum t7xx_mode mode = T7XX_UNKNOWN;
+	struct t7xx_pci_dev *t7xx_dev;
+	struct pci_dev *pdev;
+
+	pdev = to_pci_dev(dev);
+	t7xx_dev = pci_get_drvdata(pdev);
+	if (!t7xx_dev)
+		return -ENODEV;
+
+	mode = READ_ONCE(t7xx_dev->mode);
+	if (mode < T7XX_MODE_LAST)
+		return sysfs_emit(buf, "%s\n", t7xx_mode_names[mode]);
+
+	return sysfs_emit(buf, "%s\n", t7xx_mode_names[T7XX_UNKNOWN]);
+}
+
+static DEVICE_ATTR_RW(t7xx_mode);
+
+static ssize_t t7xx_debug_ports_store(struct device *dev,
+				      struct device_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct t7xx_pci_dev *t7xx_dev;
+	struct pci_dev *pdev;
+	bool show;
+	int ret;
+
+	pdev = to_pci_dev(dev);
+	t7xx_dev = pci_get_drvdata(pdev);
+	if (!t7xx_dev)
+		return -ENODEV;
+
+	ret = kstrtobool(buf, &show);
+	if (ret < 0)
+		return ret;
+
+	t7xx_proxy_debug_ports_show(t7xx_dev, show);
+	WRITE_ONCE(t7xx_dev->debug_ports_show, show);
+
+	return count;
+};
+
+static ssize_t t7xx_debug_ports_show(struct device *dev,
+				     struct device_attribute *attr,
+				     char *buf)
+{
+	struct t7xx_pci_dev *t7xx_dev;
+	struct pci_dev *pdev;
+	bool show;
+
+	pdev = to_pci_dev(dev);
+	t7xx_dev = pci_get_drvdata(pdev);
+	if (!t7xx_dev)
+		return -ENODEV;
+
+	show = READ_ONCE(t7xx_dev->debug_ports_show);
+
+	return sysfs_emit(buf, "%d\n", show);
+}
+
+static DEVICE_ATTR_RW(t7xx_debug_ports);
+
+static struct attribute *t7xx_attr[] = {
+	&dev_attr_t7xx_mode.attr,
+	&dev_attr_t7xx_debug_ports.attr,
+	NULL
+};
+
+static const struct attribute_group t7xx_attribute_group = {
+	.attrs = t7xx_attr,
+};
+
+void t7xx_mode_update(struct t7xx_pci_dev *t7xx_dev, enum t7xx_mode mode)
+{
+	if (!t7xx_dev)
+		return;
+
+	WRITE_ONCE(t7xx_dev->mode, mode);
+	sysfs_notify(&t7xx_dev->pdev->dev.kobj, NULL, "t7xx_mode");
+}
+
 enum t7xx_pm_state {
 	MTK_PM_EXCEPTION,
 	MTK_PM_INIT,		/* Device initialized, but handshake not completed */
 	MTK_PM_SUSPENDED,
 	MTK_PM_RESUMED,
-};
-
-static ssize_t cold_reboot_store(struct device *dev, struct device_attribute *attr,
-				 const char *buf, size_t count)
-{
-	struct pci_dev *pdev = to_pci_dev(dev);
-
-	t7xx_rescan_queue_work(pdev, true);
-	return count;
-}
-
-static DEVICE_ATTR_WO(cold_reboot);
-
-static struct attribute *cold_reboot_attr[] = {
-	&dev_attr_cold_reboot.attr,
-	NULL
-};
-
-static const struct attribute_group cold_reboot_attribute_group = {
-	.attrs = cold_reboot_attr,
 };
 
 static void t7xx_dev_set_sleep_capability(struct t7xx_pci_dev *t7xx_dev, bool enable)
@@ -301,7 +411,8 @@ static int __t7xx_pci_pm_suspend(struct pci_dev *pdev)
 	int ret;
 
 	t7xx_dev = pci_get_drvdata(pdev);
-	if (atomic_read(&t7xx_dev->md_pm_state) <= MTK_PM_INIT) {
+	if (atomic_read(&t7xx_dev->md_pm_state) <= MTK_PM_INIT ||
+	    READ_ONCE(t7xx_dev->mode) != T7XX_READY) {
 		dev_err(&pdev->dev, "[PM] Exiting suspend, modem in invalid state\n");
 		return -EFAULT;
 	}
@@ -392,7 +503,7 @@ static int t7xx_pcie_reinit(struct t7xx_pci_dev *t7xx_dev, bool is_d3)
 
 	if (is_d3) {
 		t7xx_mhccif_init(t7xx_dev);
-		return t7xx_pci_pm_reinit(t7xx_dev);
+		t7xx_pci_pm_reinit(t7xx_dev);
 	}
 
 	return 0;
@@ -427,6 +538,33 @@ static int t7xx_send_fsm_command(struct t7xx_pci_dev *t7xx_dev, u32 event)
 	return ret;
 }
 
+int t7xx_pci_reprobe_early(struct t7xx_pci_dev *t7xx_dev)
+{
+	enum t7xx_mode mode = READ_ONCE(t7xx_dev->mode);
+	int ret;
+
+	if (mode == T7XX_FASTBOOT_DOWNLOAD)
+		pm_runtime_put_noidle(&t7xx_dev->pdev->dev);
+
+	ret = t7xx_send_fsm_command(t7xx_dev, FSM_CMD_STOP);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+int t7xx_pci_reprobe(struct t7xx_pci_dev *t7xx_dev, bool boot)
+{
+	int ret;
+
+	ret = t7xx_pcie_reinit(t7xx_dev, boot);
+	if (ret)
+		return ret;
+
+	t7xx_clear_rgu_irq(t7xx_dev);
+	return t7xx_send_fsm_command(t7xx_dev, FSM_CMD_START);
+}
+
 static int __t7xx_pci_pm_resume(struct pci_dev *pdev, bool state_check)
 {
 	struct t7xx_pci_dev *t7xx_dev;
@@ -453,16 +591,11 @@ static int __t7xx_pci_pm_resume(struct pci_dev *pdev, bool state_check)
 		if (prev_state == PM_RESUME_REG_STATE_L3 ||
 		    (prev_state == PM_RESUME_REG_STATE_INIT &&
 		     atr_reg_val == ATR_SRC_ADDR_INVALID)) {
-			ret = t7xx_send_fsm_command(t7xx_dev, FSM_CMD_STOP);
+			ret = t7xx_pci_reprobe_early(t7xx_dev);
 			if (ret)
 				return ret;
 
-			ret = t7xx_pcie_reinit(t7xx_dev, true);
-			if (ret)
-				return ret;
-
-			t7xx_clear_rgu_irq(t7xx_dev);
-			return t7xx_send_fsm_command(t7xx_dev, FSM_CMD_START);
+			return t7xx_pci_reprobe(t7xx_dev, true);
 		}
 
 		if (prev_state == PM_RESUME_REG_STATE_EXP ||
@@ -745,39 +878,33 @@ static int t7xx_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	t7xx_pci_infracfg_ao_calc(t7xx_dev);
 	t7xx_mhccif_init(t7xx_dev);
 
-	ret = t7xx_devlink_register(t7xx_dev);
-	if (ret)
-		return ret;
-
 	ret = t7xx_md_init(t7xx_dev);
 	if (ret)
-		goto err_devlink_unregister;
+		return ret;
 
 	t7xx_pcie_mac_interrupts_dis(t7xx_dev);
 
 	ret = sysfs_create_group(&t7xx_dev->pdev->dev.kobj,
-				 &cold_reboot_attribute_group);
-	if (ret) {
-		t7xx_md_exit(t7xx_dev);
-		goto err_devlink_unregister;
-	}
+				 &t7xx_attribute_group);
+	if (ret)
+		goto err_md_exit;
 
 	ret = t7xx_interrupt_init(t7xx_dev);
-	if (ret) {
-		sysfs_remove_group(&t7xx_dev->pdev->dev.kobj,
-				   &cold_reboot_attribute_group);
-		t7xx_md_exit(t7xx_dev);
-		goto err_devlink_unregister;
-	}
+	if (ret)
+		goto err_remove_group;
 
-	t7xx_rescan_done();
+
 	t7xx_pcie_mac_set_int(t7xx_dev, MHCCIF_INT);
 	t7xx_pcie_mac_interrupts_en(t7xx_dev);
 
 	return 0;
 
-err_devlink_unregister:
-	t7xx_devlink_unregister(t7xx_dev);
+err_remove_group:
+	sysfs_remove_group(&t7xx_dev->pdev->dev.kobj,
+			   &t7xx_attribute_group);
+
+err_md_exit:
+	t7xx_md_exit(t7xx_dev);
 	return ret;
 }
 
@@ -787,11 +914,10 @@ static void t7xx_pci_remove(struct pci_dev *pdev)
 	int i;
 
 	t7xx_dev = pci_get_drvdata(pdev);
-	t7xx_md_exit(t7xx_dev);
-	t7xx_devlink_unregister(t7xx_dev);
 
 	sysfs_remove_group(&t7xx_dev->pdev->dev.kobj,
-			   &cold_reboot_attribute_group);
+			   &t7xx_attribute_group);
+	t7xx_md_exit(t7xx_dev);
 
 	for (i = 0; i < EXT_INT_NUM; i++) {
 		if (!t7xx_dev->intr_handler[i])
@@ -818,59 +944,7 @@ static struct pci_driver t7xx_pci_driver = {
 	.shutdown = t7xx_pci_shutdown,
 };
 
-static int __init t7xx_pci_init(void)
-{
-	int ret;
-
-	t7xx_pci_dev_rescan();
-	ret = t7xx_rescan_init();
-	if (ret) {
-		pr_err("Failed to init t7xx rescan work\n");
-		return ret;
-	}
-
-	return pci_register_driver(&t7xx_pci_driver);
-}
-module_init(t7xx_pci_init);
-
-static int t7xx_always_match(struct device *dev, const void *data)
-{
-	struct pci_dev *pdev = to_pci_dev(dev);
-	const struct pci_device_id *id = data;
-
-	if (pci_match_id(id, pdev))
-		return 1;
-
-	return 0;
-}
-
-static void __exit t7xx_pci_cleanup(void)
-{
-	int remove_flag = 0;
-	struct device *dev;
-
-	dev = driver_find_device(&t7xx_pci_driver.driver, NULL, &t7xx_pci_table[0],
-				 t7xx_always_match);
-	if (dev) {
-		pr_debug("unregister t7xx PCIe driver while device is still exist.\n");
-		put_device(dev);
-		remove_flag = 1;
-	} else {
-		pr_debug("no t7xx PCIe driver found.\n");
-	}
-
-	pci_lock_rescan_remove();
-	pci_unregister_driver(&t7xx_pci_driver);
-	pci_unlock_rescan_remove();
-
-	t7xx_rescan_deinit();
-	if (remove_flag) {
-		pr_debug("remove t7xx PCI device\n");
-		pci_stop_and_remove_bus_device_locked(to_pci_dev(dev));
-	}
-}
-
-module_exit(t7xx_pci_cleanup);
+module_pci_driver(t7xx_pci_driver);
 
 MODULE_AUTHOR("MediaTek Inc");
 MODULE_DESCRIPTION("MediaTek PCIe 5G WWAN modem T7xx driver");

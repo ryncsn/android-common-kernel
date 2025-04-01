@@ -113,12 +113,10 @@ struct cldma_ctrl {
 	bool is_late_init;
 };
 
-#define CLDMA_Q_IDX_DUMP 1
+#define CLDMA_Q_IDX_DUMP	1
 #define GPD_FLAGS_HWO		BIT(0)
 #define GPD_FLAGS_IOC		BIT(7)
 #define GPD_DMAPOOL_ALIGN	16
-
-#define CLDMA_MTU              3584    /* 3.5kB */
 
 int t7xx_cldma_alloc(enum cldma_id hif_id, struct t7xx_pci_dev *t7xx_dev);
 void t7xx_cldma_hif_hw_init(struct cldma_ctrl *md_ctrl);

@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/thermal/mediatek.virtual-temp.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek Virtual Temperature sensor (vtemp)
+
+maintainers:
+  - Hsin-Te Yuan <yuanhsinte@google.com>
+
+properties:
+  compatible:
+    const: mediatek,virtual-temp
+
+  mediatek,tz-names:
+    description: The thermal zones to be aggregated
+
+  "#thermal-sensor-cells":
+    const: 1
+
+required:
+  - compatible
+  - mediatek,tz-names
+  - "#thermal-sensor-cells"
+
+additionalProperties: false
+
+examples:
+  - |
+    vtemp: vtemp {
+      compatible = "mediatek,virtual-temp";
+      #thermal-sensor-cells = <1>;
+      mediatek,tz-names = "cpu-little0-thermal",
+                          "cpu-little1-thermal",
+                          "cpu-little2-thermal",
+                          "cpu-little3-thermal",
+                          "cpu-big0-thermal",
+                          "cpu-big1-thermal",
+                          "apu-thermal",
+                          "gpu-thermal",
+                          "gpu1-thermal",
+                          "adsp-thermal",
+                          "vdo-thermal",
+                          "infra-thermal",
+                          "cam1-thermal",
+                          "cam2-thermal";
+    };

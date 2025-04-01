@@ -37,7 +37,6 @@
 #include "t7xx_modem_ops.h"
 #include "t7xx_netdev.h"
 #include "t7xx_pci.h"
-#include "t7xx_pci_rescan.h"
 #include "t7xx_pcie_mac.h"
 #include "t7xx_port.h"
 #include "t7xx_port_proxy.h"
@@ -54,6 +53,7 @@
 
 #define RGU_RESET_DELAY_MS	10
 #define PORT_RESET_DELAY_MS	2000
+#define FASTBOOT_RESET_DELAY_MS	2000
 #define EX_HS_TIMEOUT_MS	5000
 #define EX_HS_POLL_DELAY_MS	10
 
@@ -168,14 +168,53 @@ static int t7xx_acpi_reset(struct t7xx_pci_dev *t7xx_dev, char *fn_name)
 	}
 
 	kfree(buffer.pointer);
+#else
+	struct device *dev = &t7xx_dev->pdev->dev;
+	int ret;
 
+	ret = pci_reset_function(t7xx_dev->pdev);
+	if (ret) {
+		dev_err(dev, "Failed to reset device, error:%d\n", ret);
+		return ret;
+	}
 #endif
 	return 0;
 }
 
-int t7xx_acpi_fldr_func(struct t7xx_pci_dev *t7xx_dev)
+static void t7xx_host_event_notify(struct t7xx_pci_dev *t7xx_dev, unsigned int event_id)
 {
-	return t7xx_acpi_reset(t7xx_dev, "_RST");
+	u32 value;
+
+	value = ioread32(IREG_BASE(t7xx_dev) + T7XX_PCIE_MISC_DEV_STATUS);
+	value &= ~HOST_EVENT_MASK;
+	value |= FIELD_PREP(HOST_EVENT_MASK, event_id);
+	iowrite32(value, IREG_BASE(t7xx_dev) + T7XX_PCIE_MISC_DEV_STATUS);
+}
+
+int t7xx_reset_device(struct t7xx_pci_dev *t7xx_dev, enum reset_type type)
+{
+	int ret = 0;
+
+	pci_save_state(t7xx_dev->pdev);
+	t7xx_pci_reprobe_early(t7xx_dev);
+	t7xx_mode_update(t7xx_dev, T7XX_RESET);
+	WRITE_ONCE(t7xx_dev->debug_ports_show, false);
+
+	if (type == FLDR) {
+		ret = t7xx_acpi_reset(t7xx_dev, "_RST");
+	} else if (type == PLDR) {
+		ret = t7xx_acpi_reset(t7xx_dev, "MRST._RST");
+	} else if (type == FASTBOOT) {
+		t7xx_host_event_notify(t7xx_dev, FASTBOOT_DL_NOTIFY);
+		t7xx_mhccif_h2d_swint_trigger(t7xx_dev, H2D_CH_DEVICE_RESET);
+		msleep(FASTBOOT_RESET_DELAY_MS);
+	}
+
+	pci_restore_state(t7xx_dev->pdev);
+	if (ret)
+		return ret;
+
+	return t7xx_pci_reprobe(t7xx_dev, true);
 }
 
 static void t7xx_reset_device_via_pmic(struct t7xx_pci_dev *t7xx_dev)
@@ -184,9 +223,9 @@ static void t7xx_reset_device_via_pmic(struct t7xx_pci_dev *t7xx_dev)
 
 	val = ioread32(IREG_BASE(t7xx_dev) + T7XX_PCIE_MISC_DEV_STATUS);
 	if (val & MISC_RESET_TYPE_PLDR)
-		t7xx_acpi_reset(t7xx_dev, "MRST._RST");
+		t7xx_reset_device(t7xx_dev, PLDR);
 	else if (val & MISC_RESET_TYPE_FLDR)
-		t7xx_acpi_fldr_func(t7xx_dev);
+		t7xx_reset_device(t7xx_dev, FLDR);
 }
 
 static irqreturn_t t7xx_rgu_isr_thread(int irq, void *data)
@@ -195,8 +234,6 @@ static irqreturn_t t7xx_rgu_isr_thread(int irq, void *data)
 
 	msleep(RGU_RESET_DELAY_MS);
 	t7xx_reset_device_via_pmic(t7xx_dev);
-	t7xx_rescan_queue_work(t7xx_dev->pdev, false);
-
 	return IRQ_HANDLED;
 }
 
@@ -761,6 +798,7 @@ err_destroy_hswq:
 
 void t7xx_md_exit(struct t7xx_pci_dev *t7xx_dev)
 {
+	enum t7xx_mode mode = READ_ONCE(t7xx_dev->mode);
 	struct t7xx_modem *md = t7xx_dev->md;
 
 	t7xx_pcie_mac_clear_int(t7xx_dev, SAP_RGU_INT);
@@ -768,7 +806,8 @@ void t7xx_md_exit(struct t7xx_pci_dev *t7xx_dev)
 	if (!md->md_init_finish)
 		return;
 
-	t7xx_fsm_append_cmd(md->fsm_ctl, FSM_CMD_PRE_STOP, FSM_CMD_FLAG_WAIT_FOR_COMPLETION);
+	if (mode != T7XX_RESET && mode != T7XX_UNKNOWN)
+		t7xx_fsm_append_cmd(md->fsm_ctl, FSM_CMD_PRE_STOP, FSM_CMD_FLAG_WAIT_FOR_COMPLETION);
 	t7xx_port_proxy_uninit(md->port_prox);
 	t7xx_cldma_exit(md->md_ctrl[CLDMA_ID_AP]);
 	t7xx_cldma_exit(md->md_ctrl[CLDMA_ID_MD]);

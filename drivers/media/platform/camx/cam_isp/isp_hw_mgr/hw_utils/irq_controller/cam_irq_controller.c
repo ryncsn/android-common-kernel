@@ -108,6 +108,7 @@ struct cam_irq_controller {
 	struct list_head                th_list_head[CAM_IRQ_PRIORITY_MAX];
 	uint32_t                        hdl_idx;
 	spinlock_t                      lock;
+	spinlock_t			th_lock;
 	struct cam_irq_th_payload       th_payload;
 };
 
@@ -217,6 +218,7 @@ int cam_irq_controller_init(const char *name, void __iomem *mem_base,
 		INIT_LIST_HEAD(&controller->th_list_head[i]);
 
 	spin_lock_init(&controller->lock);
+	spin_lock_init(&controller->th_lock);
 
 	controller->hdl_idx = 1;
 	*irq_controller = controller;
@@ -272,7 +274,8 @@ int cam_irq_controller_subscribe_irq(void *irq_controller,
 	CAM_IRQ_HANDLER_TOP_HALF           top_half_handler,
 	CAM_IRQ_HANDLER_BOTTOM_HALF        bottom_half_handler,
 	void                              *bottom_half,
-	struct cam_irq_bh_api             *irq_bh_api)
+	struct cam_irq_bh_api             *irq_bh_api,
+	enum cam_irq_controller_type       controller_type)
 {
 	struct cam_irq_controller  *controller  = irq_controller;
 	struct cam_irq_evt_handler *evt_handler = NULL;
@@ -355,12 +358,30 @@ int cam_irq_controller_subscribe_irq(void *irq_controller,
 		controller->hdl_idx = 1;
 
 	if (!in_irq()) {
-		spin_lock_irqsave(&controller->lock, flags);
-		rc = _cam_irq_controller_subscribe_irq(controller,
-						       priority,
-						       evt_bit_mask_arr,
-						       evt_handler);
-		spin_unlock_irqrestore(&controller->lock, flags);
+		switch (controller_type) {
+			case CAM_IRQ_CONTROLLER_VFE:
+				spin_lock_irqsave(&controller->lock, flags);
+				CAM_DBG(CAM_IRQ_CTRL, "~IRQ: controller: %s", controller->name);
+				rc = _cam_irq_controller_subscribe_irq(controller,
+								       priority,
+								       evt_bit_mask_arr,
+								       evt_handler);
+				spin_unlock_irqrestore(&controller->lock, flags);
+				break;
+
+			case CAM_IRQ_CONTROLLER_VFE_BUS:
+				spin_lock_irqsave(&controller->th_lock, flags);
+				CAM_DBG(CAM_IRQ_CTRL, "~IRQ: controller: %s", controller->name);
+				rc = _cam_irq_controller_subscribe_irq(controller,
+								       priority,
+								       evt_bit_mask_arr,
+								       evt_handler);
+				spin_unlock_irqrestore(&controller->th_lock, flags);
+				break;
+			default:
+				CAM_DBG(CAM_IRQ_CTRL, "~IRQ: Invalid Controller %s", controller->name);
+				break;
+		}
 	} else {
 		rc = _cam_irq_controller_subscribe_irq(controller,
 						       priority,
@@ -515,7 +536,8 @@ _cam_irq_controller_unsubscribe_irq(struct cam_irq_controller *controller,
 }
 
 int cam_irq_controller_unsubscribe_irq(void *irq_controller,
-				       uint32_t handle)
+				       uint32_t handle,
+				       enum cam_irq_controller_type controller_type)
 {
 	struct cam_irq_controller *controller;
 	unsigned long flags;
@@ -527,10 +549,24 @@ int cam_irq_controller_unsubscribe_irq(void *irq_controller,
 	controller = irq_controller;
 
 	if (!in_irq()) {
-		spin_lock_irqsave(&controller->lock, flags);
-		rc = _cam_irq_controller_unsubscribe_irq(irq_controller,
-							 handle);
-		spin_unlock_irqrestore(&controller->lock, flags);
+		switch (controller_type) {
+			case CAM_IRQ_CONTROLLER_VFE:
+				spin_lock_irqsave(&controller->lock, flags);
+				rc = _cam_irq_controller_unsubscribe_irq(irq_controller,
+									 handle);
+				spin_unlock_irqrestore(&controller->lock, flags);
+				break;
+			case CAM_IRQ_CONTROLLER_VFE_BUS:
+				spin_lock_irqsave(&controller->th_lock, flags);
+				rc = _cam_irq_controller_unsubscribe_irq(irq_controller,
+									 handle);
+				spin_unlock_irqrestore(&controller->th_lock, flags);
+				break;
+			default:
+				CAM_DBG(CAM_IRQ_CTRL, "~IRQ: Invalid Controller %s", controller->name);
+				rc = -EINVAL;
+				break;
+		}
 	} else {
 		rc = _cam_irq_controller_unsubscribe_irq(irq_controller,
 							 handle);
@@ -561,8 +597,11 @@ static bool cam_irq_controller_match_bit_mask(
 
 	for (i = 0; i < controller->num_registers; i++) {
 		if (evt_handler->evt_bit_mask_arr[i] &
-			controller->irq_status_arr[i])
+			controller->irq_status_arr[i]) {
+			CAM_DBG(CAM_IRQ_CTRL, "controller name: %s; num_registers: %u",
+					controller->name, controller->num_registers);
 			return true;
+		}
 	}
 
 	return false;
@@ -601,6 +640,13 @@ static void cam_irq_controller_th_processing(
 			th_payload->evt_status_arr[i] =
 				controller->irq_status_arr[i] &
 				evt_handler->evt_bit_mask_arr[i];
+
+			CAM_DBG(CAM_IRQ_CTRL, "%s: evt_handler: evt_bit_mask_arr[%d]: 0x%X",
+					controller->name, i, evt_handler->evt_bit_mask_arr[i]);
+			CAM_DBG(CAM_IRQ_CTRL, "%s: controller : irq_status_arr[%d]: 0x%X",
+					controller->name, i, controller->irq_status_arr[i]);
+			CAM_DBG(CAM_IRQ_CTRL, "%s: th_payload : evt_status_arr[%d]: 0x%X",
+					controller->name, i, th_payload->evt_status_arr[i]);
 		}
 
 		irq_bh_api = &evt_handler->irq_bh_api;
@@ -620,10 +666,13 @@ static void cam_irq_controller_th_processing(
 		 * irq_status_arr[0] is dummy argument passed. the entire
 		 * status array is passed in th_payload.
 		 */
-		if (evt_handler->top_half_handler)
+		if (evt_handler->top_half_handler) {
+			CAM_DBG(CAM_IRQ_CTRL, "Top Half Handler, dummy argument for controller %s evnt-ID : 0x%X",
+					controller->name, controller->irq_status_arr[0]);
 			rc = evt_handler->top_half_handler(
 				controller->irq_status_arr[0],
 				(void *)th_payload);
+		}
 
 		if (rc && bh_cmd) {
 			irq_bh_api->put_bh_payload_func(
@@ -726,6 +775,66 @@ irqreturn_t cam_irq_controller_handle_irq(int irq_num, void *priv)
 	spin_unlock(&controller->lock);
 	CAM_DBG(CAM_IRQ_CTRL, "unlocked controller %pK name %s lock %pK",
 		controller, controller->name, &controller->lock);
+
+	return IRQ_HANDLED;
+}
+
+irqreturn_t cam_vfe_bus_controller_handle_irq(int irq_num, void *priv)
+{
+	struct cam_irq_controller   *controller  = priv;
+	struct cam_irq_register_obj *irq_register;
+	bool         need_th_processing[CAM_IRQ_PRIORITY_MAX] = {false};
+	int          i;
+	int          j;
+
+	if (!controller)
+		return IRQ_NONE;
+
+	CAM_DBG(CAM_IRQ_CTRL,
+		"Locking: %s IRQ Controller: [%pK], lock handle: %pK irq_num: %d",
+		controller->name, controller, &controller->th_lock, irq_num);
+
+	spin_lock(&controller->th_lock);
+	for (i = 0; i < controller->num_registers; i++) {
+
+		irq_register = &controller->irq_register_arr[i];
+
+		controller->irq_status_arr[i] =
+			cam_io_r_mb(controller->mem_base + controller->irq_register_arr[i].status_reg_offset);
+
+		cam_io_w_mb(controller->irq_status_arr[i],
+			controller->mem_base + controller->irq_register_arr[i].clear_reg_offset);
+
+		CAM_DBG(CAM_IRQ_CTRL, "Read irq status%d (0x%x) = 0x%x", i,
+			controller->irq_register_arr[i].status_reg_offset,
+			controller->irq_status_arr[i]);
+
+		for (j = 0; j < CAM_IRQ_PRIORITY_MAX; j++) {
+			if (irq_register->top_half_enable_mask[j] &
+				controller->irq_status_arr[i])
+				need_th_processing[j] = true;
+		}
+	}
+
+	CAM_DBG(CAM_IRQ_CTRL, "Status Registers read Successful");
+
+	if (controller->global_clear_offset)
+		cam_io_w_mb(controller->global_clear_bitmask,
+			controller->mem_base + controller->global_clear_offset);
+
+	CAM_DBG(CAM_IRQ_CTRL, "Status Clear done");
+
+	for (i = 0; i < CAM_IRQ_PRIORITY_MAX; i++) {
+		if (need_th_processing[i]) {
+			CAM_DBG(CAM_IRQ_CTRL, "Invoke TH processing");
+			cam_irq_controller_th_processing(controller,
+				&controller->th_list_head[i]);
+		}
+	}
+	spin_unlock(&controller->th_lock);
+
+	CAM_DBG(CAM_IRQ_CTRL, "Unlocked: %s IRQ Controller: %pK, lock handle: %pK",
+		controller->name, controller, &controller->th_lock);
 
 	return IRQ_HANDLED;
 }

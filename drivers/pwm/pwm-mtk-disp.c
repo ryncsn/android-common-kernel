@@ -249,7 +249,7 @@ static int mtk_disp_pwm_probe(struct platform_device *pdev)
 	if (IS_ERR(mdp->clk_main))
 		return PTR_ERR(mdp->clk_main);
 
-	mdp->clk_mm = devm_clk_get(&pdev->dev, "mm");
+	mdp->clk_mm = devm_clk_get_optional(&pdev->dev, "mm");
 	if (IS_ERR(mdp->clk_mm))
 		return PTR_ERR(mdp->clk_mm);
 

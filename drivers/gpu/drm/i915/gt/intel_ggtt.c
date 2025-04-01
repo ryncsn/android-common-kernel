@@ -108,11 +108,12 @@ int i915_ggtt_init_hw(struct drm_i915_private *i915)
 /**
  * i915_ggtt_suspend_vm - Suspend the memory mappings for a GGTT or DPT VM
  * @vm: The VM to suspend the mappings for
+ * @evict_all: Evict all VMAs
  *
  * Suspend the memory mappings for all objects mapped to HW via the GGTT or a
  * DPT page table.
  */
-void i915_ggtt_suspend_vm(struct i915_address_space *vm)
+void i915_ggtt_suspend_vm(struct i915_address_space *vm, bool evict_all)
 {
 	struct i915_vma *vma, *vn;
 	int save_skip_rewrite;
@@ -158,7 +159,7 @@ retry:
 			goto retry;
 		}
 
-		if (!i915_vma_is_bound(vma, I915_VMA_GLOBAL_BIND)) {
+		if (evict_all || !i915_vma_is_bound(vma, I915_VMA_GLOBAL_BIND)) {
 			i915_vma_wait_for_bind(vma);
 
 			__i915_vma_evict(vma, false);
@@ -173,13 +174,15 @@ retry:
 	vm->skip_pte_rewrite = save_skip_rewrite;
 
 	mutex_unlock(&vm->mutex);
+
+	drm_WARN_ON(&vm->i915->drm, evict_all && !list_empty(&vm->bound_list));
 }
 
 void i915_ggtt_suspend(struct i915_ggtt *ggtt)
 {
 	struct intel_gt *gt;
 
-	i915_ggtt_suspend_vm(&ggtt->vm);
+	i915_ggtt_suspend_vm(&ggtt->vm, false);
 	ggtt->invalidate(ggtt);
 
 	list_for_each_entry(gt, &ggtt->gt_list, ggtt_link)
@@ -298,7 +301,7 @@ static bool should_update_ggtt_with_bind(struct i915_ggtt *ggtt)
 	return intel_gt_is_bind_context_ready(gt);
 }
 
-static struct intel_context *gen8_ggtt_bind_get_ce(struct i915_ggtt *ggtt)
+static struct intel_context *gen8_ggtt_bind_get_ce(struct i915_ggtt *ggtt, intel_wakeref_t *wakeref)
 {
 	struct intel_context *ce;
 	struct intel_gt *gt = ggtt->vm.gt;
@@ -315,7 +318,8 @@ static struct intel_context *gen8_ggtt_bind_get_ce(struct i915_ggtt *ggtt)
 	 * would conflict with fs_reclaim trying to allocate memory while
 	 * doing rpm_resume().
 	 */
-	if (!intel_gt_pm_get_if_awake(gt))
+	*wakeref = intel_gt_pm_get_if_awake(gt);
+	if (!*wakeref)
 		return NULL;
 
 	intel_engine_pm_get(ce->engine);
@@ -323,10 +327,10 @@ static struct intel_context *gen8_ggtt_bind_get_ce(struct i915_ggtt *ggtt)
 	return ce;
 }
 
-static void gen8_ggtt_bind_put_ce(struct intel_context *ce)
+static void gen8_ggtt_bind_put_ce(struct intel_context *ce, intel_wakeref_t wakeref)
 {
 	intel_engine_pm_put(ce->engine);
-	intel_gt_pm_put(ce->engine->gt);
+	intel_gt_pm_put(ce->engine->gt, wakeref);
 }
 
 static bool gen8_ggtt_bind_ptes(struct i915_ggtt *ggtt, u32 offset,
@@ -339,12 +343,13 @@ static bool gen8_ggtt_bind_ptes(struct i915_ggtt *ggtt, u32 offset,
 	struct sgt_iter iter;
 	struct i915_request *rq;
 	struct intel_context *ce;
+	intel_wakeref_t wakeref;
 	u32 *cs;
 
 	if (!num_entries)
 		return true;
 
-	ce = gen8_ggtt_bind_get_ce(ggtt);
+	ce = gen8_ggtt_bind_get_ce(ggtt, &wakeref);
 	if (!ce)
 		return false;
 
@@ -420,13 +425,13 @@ queue_err_rq:
 		offset += n_ptes;
 	}
 
-	gen8_ggtt_bind_put_ce(ce);
+	gen8_ggtt_bind_put_ce(ce, wakeref);
 	return true;
 
 err_rq:
 	i915_request_put(rq);
 put_ce:
-	gen8_ggtt_bind_put_ce(ce);
+	gen8_ggtt_bind_put_ce(ce, wakeref);
 	return false;
 }
 
@@ -1548,6 +1553,7 @@ int i915_ggtt_enable_hw(struct drm_i915_private *i915)
 /**
  * i915_ggtt_resume_vm - Restore the memory mappings for a GGTT or DPT VM
  * @vm: The VM to restore the mappings for
+ * @all_evicted: Were all VMAs expected to be evicted on suspend?
  *
  * Restore the memory mappings for all objects mapped to HW via the GGTT or a
  * DPT page table.
@@ -1555,12 +1561,17 @@ int i915_ggtt_enable_hw(struct drm_i915_private *i915)
  * Returns %true if restoring the mapping for any object that was in a write
  * domain before suspend.
  */
-bool i915_ggtt_resume_vm(struct i915_address_space *vm)
+bool i915_ggtt_resume_vm(struct i915_address_space *vm, bool all_evicted)
 {
 	struct i915_vma *vma;
 	bool write_domain_objs = false;
 
 	drm_WARN_ON(&vm->i915->drm, !vm->is_ggtt && !vm->is_dpt);
+
+	if (all_evicted) {
+		drm_WARN_ON(&vm->i915->drm, !list_empty(&vm->bound_list));
+		return false;
+	}
 
 	/* First fill our portion of the GTT with scratch pages */
 	vm->clear_range(vm, 0, vm->total);
@@ -1601,7 +1612,7 @@ void i915_ggtt_resume(struct i915_ggtt *ggtt)
 	list_for_each_entry(gt, &ggtt->gt_list, ggtt_link)
 		intel_gt_check_and_clear_faults(gt);
 
-	flush = i915_ggtt_resume_vm(&ggtt->vm);
+	flush = i915_ggtt_resume_vm(&ggtt->vm, false);
 
 	if (drm_mm_node_allocated(&ggtt->error_capture))
 		ggtt->vm.scratch_range(&ggtt->vm, ggtt->error_capture.start,

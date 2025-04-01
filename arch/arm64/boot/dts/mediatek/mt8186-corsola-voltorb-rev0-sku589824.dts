@@ -12,23 +12,13 @@
 		     "mediatek,mt8186";
 };
 
-&max98360a {
-	status = "disabled";
+&cluster1_opp_14 {
+	opp-hz = /bits/ 64 <1986000000>;
+	opp-microvolt = <1093750>;
 };
 
-&rt1019p{
-	status = "okay";
-};
-
-&sound {
-	compatible = "mediatek,mt8186-mt6366-rt1019-rt5682s-sound";
-	playback-codecs {
-		sound-dai = <&it6505dptx>,<&rt1019p>;
-	};
-};
-
-&spmi {
-	status = "disabled";
+&cluster1_opp_15 {
+	opp-hz = /bits/ 64 <2050000000>;
 };
 
 &cpu6 {
@@ -41,11 +31,16 @@
 	/delete-property/ sram-supply;
 };
 
-&cluster1_opp_14 {
-	opp-hz = /bits/ 64 <1986000000>;
-	opp-microvolt = <1093750>;
+&sound {
+	compatible = "mediatek,mt8186-mt6366-rt1019-rt5682s-sound";
 };
 
-&cluster1_opp_15 {
-	opp-hz = /bits/ 64 <2050000000>;
+&speaker_codec {
+	compatible = "realtek,rt1019p";
+	sdb-gpios = <&pio 150 GPIO_ACTIVE_HIGH>;
+	/delete-property/ sdmode-gpios;
+};
+
+&spmi {
+	status = "disabled";
 };

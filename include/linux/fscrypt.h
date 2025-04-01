@@ -855,7 +855,7 @@ static inline u64 fscrypt_limit_io_blocks(const struct inode *inode, u64 lblk,
 static inline bool
 fscrypt_inode_should_skip_dm_default_key(const struct inode *inode)
 {
-	return IS_ENCRYPTED(inode) && S_ISREG(inode->i_mode);
+	return (IS_ENCRYPTED(inode) || IS_BLKCRYPTO_PASSTHROUGH(inode)) && S_ISREG(inode->i_mode);
 }
 #else
 static inline bool

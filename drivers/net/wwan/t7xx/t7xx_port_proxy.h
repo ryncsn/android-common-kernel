@@ -43,7 +43,7 @@ struct port_proxy {
 	struct list_head	queue_ports[CLDMA_NUM][MTK_QUEUES];
 	struct device		*dev;
 	enum port_cfg_id	cfg_id;
-	struct t7xx_port        ports[];
+	struct t7xx_port	ports[];
 };
 
 struct ccci_header {
@@ -93,13 +93,12 @@ struct ctrl_msg_header {
 /* Port operations mapping */
 extern struct port_ops wwan_sub_port_ops;
 extern struct port_ops ctl_port_ops;
-extern struct port_ops devlink_port_ops;
-extern struct port_ops ap_msg_port_ops;
 
 #ifdef CONFIG_WWAN_DEBUGFS
 extern struct port_ops t7xx_trace_port_ops;
 #endif
 
+void t7xx_proxy_debug_ports_show(struct t7xx_pci_dev *t7xx_dev, bool show);
 void t7xx_port_proxy_reset(struct port_proxy *port_prox);
 void t7xx_port_proxy_uninit(struct port_proxy *port_prox);
 int t7xx_port_proxy_init(struct t7xx_modem *md);
@@ -110,7 +109,5 @@ int t7xx_port_proxy_chl_enable_disable(struct port_proxy *port_prox, unsigned in
 void t7xx_port_proxy_set_cfg(struct t7xx_modem *md, enum port_cfg_id cfg_id);
 int t7xx_port_proxy_recv_skb(struct cldma_queue *queue, struct sk_buff *skb);
 int t7xx_port_proxy_recv_skb_from_dedicated_queue(struct cldma_queue *queue, struct sk_buff *skb);
-int t7xx_port_enable_chl(struct t7xx_port *port);
-int t7xx_port_disable_chl(struct t7xx_port *port);
 
 #endif /* __T7XX_PORT_PROXY_H__ */

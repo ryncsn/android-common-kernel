@@ -227,12 +227,19 @@ static int cros_ucsi_event(struct notifier_block *nb,
 {
 	struct cros_ucsi_data *udata = container_of(nb, struct cros_ucsi_data, nb);
 
-	if (!(host_event & PD_EVENT_PPM))
-		return NOTIFY_OK;
+	if (host_event & PD_EVENT_INIT) {
+		/* Late init event received from ChromeOS EC. Treat this as a
+		 * system resume to re-enable communication with the PPM.
+		 */
+		dev_dbg(udata->dev, "Late PD init received");
+		ucsi_resume(udata->ucsi);
+	}
 
-	dev_dbg(udata->dev, "UCSI notification received");
-	flush_work(&udata->work);
-	schedule_work(&udata->work);
+	if (host_event & PD_EVENT_PPM) {
+		dev_dbg(udata->dev, "UCSI notification received");
+		flush_work(&udata->work);
+		schedule_work(&udata->work);
+	}
 
 	return NOTIFY_OK;
 }
@@ -240,6 +247,7 @@ static int cros_ucsi_event(struct notifier_block *nb,
 static void cros_ucsi_destroy(struct cros_ucsi_data *udata)
 {
 	cros_usbpd_unregister_notify(&udata->nb);
+	cancel_delayed_work_sync(&udata->write_tmo);
 	cancel_work_sync(&udata->work);
 	ucsi_destroy(udata->ucsi);
 }
@@ -308,6 +316,7 @@ static int __maybe_unused cros_ucsi_suspend(struct device *dev)
 {
 	struct cros_ucsi_data *udata = dev_get_drvdata(dev);
 
+	cancel_delayed_work_sync(&udata->write_tmo);
 	cancel_work_sync(&udata->work);
 
 	return 0;

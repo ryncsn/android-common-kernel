@@ -12,35 +12,26 @@
 		     "mediatek,mt8186";
 };
 
-&max98360a {
-	status = "disabled";
-};
-
-&rt1019p{
-	status = "okay";
-};
-
-&sound {
-	compatible = "mediatek,mt8186-mt6366-rt1019-rt5682s-sound";
-	playback-codecs {
-		sound-dai = <&it6505dptx>,<&rt1019p>;
-	};
-};
-
 &i2c1 {
 	touchscreen_auo: touchscreen@10 {
-		status = "okay";
-
 		compatible = "hid-over-i2c";
 		reg = <0x10>;
-		interrupt-parent = <&pio>;
-		interrupts = <12 IRQ_TYPE_LEVEL_LOW>;
+		interrupts-extended = <&pio 12 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&touchscreen_pins>;
 		reset-gpios = <&pio 60 GPIO_ACTIVE_LOW>;
 		vdd-supply = <&pp3300_s3>;
-
 		post-power-on-delay-ms = <450>;
 		hid-descr-addr = <0x0001>;
 	};
+};
+
+&sound {
+	compatible = "mediatek,mt8186-mt6366-rt1019-rt5682s-sound";
+};
+
+&speaker_codec {
+	compatible = "realtek,rt1019p";
+	sdb-gpios = <&pio 150 GPIO_ACTIVE_HIGH>;
+	/delete-property/ sdmode-gpios;
 };

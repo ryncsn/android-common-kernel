@@ -38,9 +38,9 @@
 #include "t7xx_state_monitor.h"
 
 #define Q_IDX_CTRL			0
-#define Q_IDX_MBIM			2
+#define Q_IDX_MBIM_MIPC		2
+#define Q_IDX_ADB			3
 #define Q_IDX_AT_CMD			5
-#define Q_IDX_AP_MSG			2
 
 #define INVALID_SEQ_NUM			GENMASK(15, 0)
 
@@ -48,6 +48,9 @@
 	for (i = 0, (p) = &(proxy)->ports[i];	\
 	     i < (proxy)->port_count;		\
 	     i++, (p) = &(proxy)->ports[i])
+
+#define T7XX_MAX_POSSIBLE_PORTS_NUM	\
+	(max(ARRAY_SIZE(t7xx_port_conf), ARRAY_SIZE(t7xx_early_port_conf)))
 
 static const struct t7xx_port_conf t7xx_port_conf[] = {
 	{
@@ -64,8 +67,8 @@ static const struct t7xx_port_conf t7xx_port_conf[] = {
 	}, {
 		.tx_ch = PORT_CH_MBIM_TX,
 		.rx_ch = PORT_CH_MBIM_RX,
-		.txq_index = Q_IDX_MBIM,
-		.rxq_index = Q_IDX_MBIM,
+		.txq_index = Q_IDX_MBIM_MIPC,
+		.rxq_index = Q_IDX_MBIM_MIPC,
 		.path_id = CLDMA_ID_MD,
 		.ops = &wwan_sub_port_ops,
 		.name = "MBIM",
@@ -99,30 +102,40 @@ static const struct t7xx_port_conf t7xx_port_conf[] = {
 		.ops = &ctl_port_ops,
 		.name = "t7xx_ap_ctrl",
 	}, {
-		.tx_ch = PORT_CH_AP_MSG_TX,
-		.rx_ch = PORT_CH_AP_MSG_RX,
-		.txq_index = Q_IDX_AP_MSG,
-		.rxq_index = Q_IDX_AP_MSG,
-		.txq_exp_index = Q_IDX_AP_MSG,
-		.rxq_exp_index = Q_IDX_AP_MSG,
+		.tx_ch = PORT_CH_AP_ADB_TX,
+		.rx_ch = PORT_CH_AP_ADB_RX,
+		.txq_index = Q_IDX_ADB,
+		.rxq_index = Q_IDX_ADB,
 		.path_id = CLDMA_ID_AP,
-		.ops = &ap_msg_port_ops,
-		.name = "ap_msg",
-	},
-
+		.ops = &wwan_sub_port_ops,
+		.name = "adb",
+		.port_type = WWAN_PORT_ADB,
+		.debug = true,
+	}, {
+		.tx_ch = PORT_CH_MIPC_TX,
+		.rx_ch = PORT_CH_MIPC_RX,
+		.txq_index = Q_IDX_MBIM_MIPC,
+		.rxq_index = Q_IDX_MBIM_MIPC,
+		.path_id = CLDMA_ID_MD,
+		.ops = &wwan_sub_port_ops,
+		.name = "mipc",
+		.port_type = WWAN_PORT_MIPC,
+		.debug = true,
+	}
 };
 
-static struct t7xx_port_conf t7xx_early_port_conf[] = {
+static const struct t7xx_port_conf t7xx_early_port_conf[] = {
 	{
-		.tx_ch = PORT_CH_ID_UNIMPORTANT,
-		.rx_ch = PORT_CH_ID_UNIMPORTANT,
+		.tx_ch = PORT_CH_UNIMPORTANT,
+		.rx_ch = PORT_CH_UNIMPORTANT,
 		.txq_index = CLDMA_Q_IDX_DUMP,
 		.rxq_index = CLDMA_Q_IDX_DUMP,
 		.txq_exp_index = CLDMA_Q_IDX_DUMP,
 		.rxq_exp_index = CLDMA_Q_IDX_DUMP,
 		.path_id = CLDMA_ID_AP,
-		.ops = &devlink_port_ops,
-		.name = "devlink",
+		.ops = &wwan_sub_port_ops,
+		.name = "fastboot",
+		.port_type = WWAN_PORT_FASTBOOT,
 	},
 };
 
@@ -339,24 +352,6 @@ int t7xx_port_send_skb(struct t7xx_port *port, struct sk_buff *skb, unsigned int
 	return t7xx_port_send_ccci_skb(port, skb, pkt_header, ex_msg);
 }
 
-int t7xx_port_enable_chl(struct t7xx_port *port)
-{
-	spin_lock(&port->port_update_lock);
-	port->chan_enable = true;
-	spin_unlock(&port->port_update_lock);
-
-	return 0;
-}
-
-int t7xx_port_disable_chl(struct t7xx_port *port)
-{
-	spin_lock(&port->port_update_lock);
-	port->chan_enable = false;
-	spin_unlock(&port->port_update_lock);
-
-	return 0;
-}
-
 static void t7xx_proxy_setup_ch_mapping(struct port_proxy *port_prox)
 {
 	struct t7xx_port *port;
@@ -383,6 +378,15 @@ static void t7xx_proxy_setup_ch_mapping(struct port_proxy *port_prox)
 	}
 }
 
+/**
+ * t7xx_port_proxy_recv_skb_from_dedicated_queue() - Dispatch early port received skb.
+ * @queue: CLDMA queue.
+ * @skb: Socket buffer.
+ *
+ * Return:
+ ** 0		- Packet consumed.
+ ** -ERROR	- Failed to process skb.
+ */
 int t7xx_port_proxy_recv_skb_from_dedicated_queue(struct cldma_queue *queue, struct sk_buff *skb)
 {
 	struct t7xx_pci_dev *t7xx_dev = queue->md_ctrl->t7xx_dev;
@@ -392,7 +396,7 @@ int t7xx_port_proxy_recv_skb_from_dedicated_queue(struct cldma_queue *queue, str
 	int ret;
 
 	port = &port_prox->ports[0];
-	if (WARN_ON(port->port_conf->rxq_index != queue->index)) {
+	if (WARN_ON_ONCE(port->port_conf->rxq_index != queue->index)) {
 		dev_kfree_skb_any(skb);
 		return -EINVAL;
 	}
@@ -522,11 +526,31 @@ static void t7xx_proxy_init_all_ports(struct t7xx_modem *md)
 		spin_lock_init(&port->port_update_lock);
 		port->chan_enable = false;
 
-		if (port_conf->ops->init)
+		if (!port_conf->debug &&
+		    port_conf->ops &&
+		    port_conf->ops->init)
 			port_conf->ops->init(port);
 	}
 
 	t7xx_proxy_setup_ch_mapping(port_prox);
+}
+
+void t7xx_proxy_debug_ports_show(struct t7xx_pci_dev *t7xx_dev, bool show)
+{
+	struct port_proxy *port_prox = t7xx_dev->md->port_prox;
+	struct t7xx_port *port;
+	int i;
+
+	for_each_proxy_port(i, port, port_prox) {
+		const struct t7xx_port_conf *port_conf = port->port_conf;
+
+		if (port_conf->debug && port_conf->ops) {
+			if (show && port_conf->ops->init)
+				port_conf->ops->init(port);
+			else if (!show && port_conf->ops->uninit)
+				port_conf->ops->uninit(port);
+		}
+	}
 }
 
 void t7xx_port_proxy_set_cfg(struct t7xx_modem *md, enum port_cfg_id cfg_id)
@@ -551,24 +575,25 @@ void t7xx_port_proxy_set_cfg(struct t7xx_modem *md, enum port_cfg_id cfg_id)
 
 	port_prox->cfg_id = cfg_id;
 	port_prox->port_count = port_count;
+
 	t7xx_proxy_init_all_ports(md);
 }
 
 static int t7xx_proxy_alloc(struct t7xx_modem *md)
 {
-	u32 early_port_count = ARRAY_SIZE(t7xx_early_port_conf);
-	unsigned int port_count = ARRAY_SIZE(t7xx_port_conf);
 	struct device *dev = &md->t7xx_dev->pdev->dev;
 	struct port_proxy *port_prox;
 
-	port_count = max_t(u32, port_count, early_port_count);
-	port_prox = devm_kzalloc(dev, struct_size(port_prox, ports, port_count), GFP_KERNEL);
+	port_prox = devm_kzalloc(dev,
+				 struct_size(port_prox,
+					     ports,
+					     T7XX_MAX_POSSIBLE_PORTS_NUM),
+				 GFP_KERNEL);
 	if (!port_prox)
 		return -ENOMEM;
 
 	md->port_prox = port_prox;
 	port_prox->dev = dev;
-	t7xx_port_proxy_set_cfg(md, PORT_CFG_ID_EARLY);
 
 	return 0;
 }
@@ -602,7 +627,7 @@ void t7xx_port_proxy_uninit(struct port_proxy *port_prox)
 	for_each_proxy_port(i, port, port_prox) {
 		const struct t7xx_port_conf *port_conf = port->port_conf;
 
-		if (port_conf->ops->uninit)
+		if (port_conf->ops && port_conf->ops->uninit)
 			port_conf->ops->uninit(port);
 	}
 }

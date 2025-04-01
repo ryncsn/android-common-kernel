@@ -416,6 +416,37 @@ bool of_machine_compatible_match(const char *const *compats)
 }
 EXPORT_SYMBOL(of_machine_compatible_match);
 
+static bool __of_device_is_status(const struct device_node *device,
+				  const char * const*strings)
+{
+	const char *status;
+	int statlen;
+
+	if (!device)
+		return false;
+
+	status = __of_get_property(device, "status", &statlen);
+	if (status == NULL)
+		return false;
+
+	if (statlen > 0) {
+		while (*strings) {
+			unsigned int len = strlen(*strings);
+
+			if ((*strings)[len - 1] == '-') {
+				if (!strncmp(status, *strings, len))
+					return true;
+			} else {
+				if (!strcmp(status, *strings))
+					return true;
+			}
+			strings++;
+		}
+	}
+
+	return false;
+}
+
 /**
  *  __of_device_is_available - check if a device is available for use
  *
@@ -426,22 +457,13 @@ EXPORT_SYMBOL(of_machine_compatible_match);
  */
 static bool __of_device_is_available(const struct device_node *device)
 {
-	const char *status;
-	int statlen;
+	static const char * const ok[] = {"okay", "ok", NULL};
 
 	if (!device)
 		return false;
 
-	status = __of_get_property(device, "status", &statlen);
-	if (status == NULL)
-		return true;
-
-	if (statlen > 0) {
-		if (!strcmp(status, "okay") || !strcmp(status, "ok"))
-			return true;
-	}
-
-	return false;
+	return !__of_get_property(device, "status", NULL) ||
+		__of_device_is_status(device, ok);
 }
 
 /**
@@ -475,16 +497,9 @@ EXPORT_SYMBOL(of_device_is_available);
  */
 static bool __of_device_is_fail(const struct device_node *device)
 {
-	const char *status;
+	static const char * const fail[] = {"fail", "fail-", NULL};
 
-	if (!device)
-		return false;
-
-	status = __of_get_property(device, "status", NULL);
-	if (status == NULL)
-		return false;
-
-	return !strcmp(status, "fail") || !strncmp(status, "fail-", 5);
+	return __of_device_is_status(device, fail);
 }
 
 /**
@@ -599,15 +614,20 @@ struct device_node *of_get_next_child(const struct device_node *node,
 EXPORT_SYMBOL(of_get_next_child);
 
 /**
- * of_get_next_available_child - Find the next available child node
+ * of_get_next_child_with_prefix - Find the next child node with prefix
  * @node:	parent node
  * @prev:	previous child of the parent node, or NULL to get first
+ * @prefix:	prefix that the node name should have
  *
- * This function is like of_get_next_child(), except that it
- * automatically skips any disabled nodes (i.e. status = "disabled").
+ * This function is like of_get_next_child(), except that it automatically
+ * skips any nodes whose name doesn't have the given prefix.
+ *
+ * Return: A node pointer with refcount incremented, use
+ * of_node_put() on it when done.
  */
-struct device_node *of_get_next_available_child(const struct device_node *node,
-	struct device_node *prev)
+struct device_node *of_get_next_child_with_prefix(const struct device_node *node,
+						  struct device_node *prev,
+						  const char *prefix)
 {
 	struct device_node *next;
 	unsigned long flags;
@@ -618,7 +638,7 @@ struct device_node *of_get_next_available_child(const struct device_node *node,
 	raw_spin_lock_irqsave(&devtree_lock, flags);
 	next = prev ? prev->sibling : node->child;
 	for (; next; next = next->sibling) {
-		if (!__of_device_is_available(next))
+		if (!of_node_name_prefix(next, prefix))
 			continue;
 		if (of_node_get(next))
 			break;
@@ -626,6 +646,44 @@ struct device_node *of_get_next_available_child(const struct device_node *node,
 	of_node_put(prev);
 	raw_spin_unlock_irqrestore(&devtree_lock, flags);
 	return next;
+}
+EXPORT_SYMBOL(of_get_next_child_with_prefix);
+
+static struct device_node *of_get_next_status_child(const struct device_node *node,
+						    struct device_node *prev,
+						    bool (*checker)(const struct device_node *))
+{
+	struct device_node *next;
+	unsigned long flags;
+
+	if (!node)
+		return NULL;
+
+	raw_spin_lock_irqsave(&devtree_lock, flags);
+	next = prev ? prev->sibling : node->child;
+	for (; next; next = next->sibling) {
+		if (!checker(next))
+			continue;
+		if (of_node_get(next))
+			break;
+	}
+	of_node_put(prev);
+	raw_spin_unlock_irqrestore(&devtree_lock, flags);
+	return next;
+}
+
+/**
+ * of_get_next_available_child - Find the next available child node
+ * @node:	parent node
+ * @prev:	previous child of the parent node, or NULL to get first
+ *
+ * This function is like of_get_next_child(), except that it
+ * automatically skips any disabled nodes (i.e. status = "disabled").
+ */
+struct device_node *of_get_next_available_child(const struct device_node *node,
+	struct device_node *prev)
+{
+	return of_get_next_status_child(node, prev, __of_device_is_available);
 }
 EXPORT_SYMBOL(of_get_next_available_child);
 

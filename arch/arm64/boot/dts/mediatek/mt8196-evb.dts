@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2021 MediaTek Inc.
+ * Author: Seiya Wang <seiya.wang@mediatek.com>
+ */
+/dts-v1/;
+#include "mt8196.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	model = "MediaTek MT8196 evaluation board";
+	compatible = "mediatek,mt8196-evb", "mediatek,mt8196";
+
+	/* chosen */
+	chosen: chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	usb_p0_vbus: regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		gpio = <&pio 20 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+};
+
+&nor_flash {
+	pinctrl-names = "default";
+	pinctrl-0 = <&nor_pins_default>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <52000000>;
+	};
+};
+
+&pcie0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_pins_default>;
+	status = "okay";
+};
+
+&pcie1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie1_pins_default>;
+	status = "okay";
+};
+
+&pciephy0 {
+	status = "okay";
+};
+
+&pciephy1 {
+	status = "okay";
+};
+
+&pio {
+	nor_pins_default: nor-default-pins {
+		pins0 {
+			pinmux = <PINMUX_GPIO102__FUNC_SF_CK>;
+			bias-pull-down = <MTK_PULL_SET_RSEL_000>;
+			mediatek,drive-strength-adv = <0>;
+			drive-strength = <14>;
+		};
+
+		pins1 {
+			pinmux = <PINMUX_GPIO101__FUNC_SF_CS>;
+			bias-pull-up = <MTK_PULL_SET_RSEL_000>;
+			mediatek,drive-strength-adv = <0>;
+			drive-strength = <14>;
+		};
+
+		pins2 {
+			pinmux = <PINMUX_GPIO91__FUNC_SF_D0>,
+				 <PINMUX_GPIO92__FUNC_SF_D1>;
+			bias-pull-down;
+			drive-strength = <14>;
+		};
+	};
+
+	xhci0_pins_default: xhci0-default-pins {
+		pins-cmd-dat {
+			pinmux = <PINMUX_GPIO72__FUNC_GPIO72>;
+			output-high;
+		};
+	};
+
+	pcie0_pins_default: pcie0-default {
+		pins-cmd-dat {
+			pinmux = <PINMUX_GPIO241__FUNC_PCIE_PERSTN>,
+				 <PINMUX_GPIO242__FUNC_PCIE_WAKEN>,
+				 <PINMUX_GPIO243__FUNC_PCIE_CLKREQN>;
+			bias-pull-up;
+		};
+	};
+
+	pcie1_pins_default: pcie1-default {
+		pins-cmd-dat {
+			pinmux = <PINMUX_GPIO145__FUNC_PCIE_WAKEN_1P>,
+				 <PINMUX_GPIO146__FUNC_PCIE_PERSTN_1P>,
+				 <PINMUX_GPIO147__FUNC_PCIE_CLKREQN_1P>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+		};
+	};
+};
+
+&xhci0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&xhci0_pins_default>;
+	vbus-supply = <&usb_p0_vbus>;
+	status = "okay";
+};
+
+&u2phy0 {
+	status = "okay";
+};
+
+&u3phy0 {
+	status = "okay";
+};
+
+&uart0 {
+	status = "okay";
+};

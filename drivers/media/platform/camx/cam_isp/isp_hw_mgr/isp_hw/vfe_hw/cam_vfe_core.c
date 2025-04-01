@@ -405,7 +405,7 @@ int cam_vfe_reset(void *hw_priv, void *reset_core_args, uint32_t arg_size)
 	core_info->irq_handle = cam_irq_controller_subscribe_irq(
 		core_info->vfe_irq_controller, CAM_IRQ_PRIORITY_0,
 		top_reset_irq_reg_mask, &core_info->irq_payload,
-		cam_vfe_reset_irq_top_half, NULL, NULL, NULL);
+		cam_vfe_reset_irq_top_half, NULL, NULL, NULL, CAM_IRQ_CONTROLLER_VFE);
 	if (core_info->irq_handle < 0) {
 		CAM_ERR(CAM_ISP, "subscribe irq controller failed");
 		return -EFAULT;
@@ -425,7 +425,7 @@ int cam_vfe_reset(void *hw_priv, void *reset_core_args, uint32_t arg_size)
 	CAM_DBG(CAM_ISP, "reset complete done (%d)", rc);
 
 	rc = cam_irq_controller_unsubscribe_irq(
-		core_info->vfe_irq_controller, core_info->irq_handle);
+		core_info->vfe_irq_controller, core_info->irq_handle, CAM_IRQ_CONTROLLER_VFE);
 	if (rc)
 		CAM_ERR(CAM_ISP, "Error! Unsubscribe failed");
 
@@ -599,7 +599,8 @@ int cam_vfe_start(void *hw_priv, void *start_args, uint32_t arg_size)
 					cam_vfe_irq_top_half,
 					cam_ife_mgr_do_tasklet,
 					isp_res->tasklet_info,
-					&tasklet_bh_api);
+					&tasklet_bh_api,
+					CAM_IRQ_CONTROLLER_VFE);
 			if (isp_res->irq_handle < 1)
 				rc = -ENOMEM;
 		} else if (isp_res->res_id == CAM_ISP_HW_VFE_IN_RD) {
@@ -612,7 +613,8 @@ int cam_vfe_start(void *hw_priv, void *start_args, uint32_t arg_size)
 					cam_vfe_irq_top_half,
 					cam_ife_mgr_do_tasklet,
 					isp_res->tasklet_info,
-					&tasklet_bh_api);
+					&tasklet_bh_api,
+					CAM_IRQ_CONTROLLER_VFE);
 			if (isp_res->irq_handle < 1)
 				rc = -ENOMEM;
 		} else if (isp_res->rdi_only_ctx) {
@@ -636,7 +638,8 @@ int cam_vfe_start(void *hw_priv, void *start_args, uint32_t arg_size)
 					cam_vfe_irq_top_half,
 					cam_ife_mgr_do_tasklet,
 					isp_res->tasklet_info,
-					&tasklet_bh_api);
+					&tasklet_bh_api,
+					CAM_IRQ_CONTROLLER_VFE);
 			if (isp_res->irq_handle < 1)
 				rc = -ENOMEM;
 		}
@@ -673,7 +676,8 @@ int cam_vfe_start(void *hw_priv, void *start_args, uint32_t arg_size)
 				cam_vfe_irq_err_top_half,
 				cam_ife_mgr_do_tasklet,
 				core_info->tasklet_info,
-				&tasklet_bh_api);
+				&tasklet_bh_api,
+				CAM_IRQ_CONTROLLER_VFE);
 		if (core_info->irq_err_handle < 1) {
 			CAM_ERR(CAM_ISP, "Error handle subscribe failure");
 			rc = -ENOMEM;
@@ -705,7 +709,7 @@ int cam_vfe_stop(void *hw_priv, void *stop_args, uint32_t arg_size)
 	mutex_lock(&vfe_hw->hw_mutex);
 	if (isp_res->res_type == CAM_ISP_RESOURCE_VFE_IN) {
 		cam_irq_controller_unsubscribe_irq(
-			core_info->vfe_irq_controller, isp_res->irq_handle);
+			core_info->vfe_irq_controller, isp_res->irq_handle, CAM_IRQ_CONTROLLER_VFE);
 		isp_res->irq_handle = 0;
 
 		rc = core_info->vfe_top->hw_ops.stop(
@@ -724,7 +728,8 @@ int cam_vfe_stop(void *hw_priv, void *stop_args, uint32_t arg_size)
 	if (core_info->irq_err_handle) {
 		cam_irq_controller_unsubscribe_irq(
 			core_info->vfe_irq_controller,
-			core_info->irq_err_handle);
+			core_info->irq_err_handle,
+			CAM_IRQ_CONTROLLER_VFE);
 		core_info->irq_err_handle = 0;
 	}
 

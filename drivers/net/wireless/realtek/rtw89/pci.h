@@ -1066,6 +1066,7 @@ struct pci_device_id;
 
 int rtw89_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id);
 void rtw89_pci_remove(struct pci_dev *pdev);
+void rtw89_pci_basic_cfg(struct rtw89_dev *rtwdev, bool resume);
 int rtw89_pci_ltr_set(struct rtw89_dev *rtwdev, bool en);
 int rtw89_pci_ltr_set_v1(struct rtw89_dev *rtwdev, bool en);
 u32 rtw89_pci_fill_txaddr_info(struct rtw89_dev *rtwdev,

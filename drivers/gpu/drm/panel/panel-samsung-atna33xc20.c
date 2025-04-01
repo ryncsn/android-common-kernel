@@ -161,10 +161,10 @@ static int atana33xc20_disable(struct drm_panel *panel)
 	p->el3_was_on = true;
 
 	/*
-	 * Sleeping 20 ms here (after setting the GPIO) avoids a glitch when
+	 * Sleeping 40 ms here (after setting the GPIO) avoids a glitch when
 	 * powering off.
 	 */
-	msleep(20);
+	msleep(40);
 
 	return 0;
 }
