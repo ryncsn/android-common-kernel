@@ -1566,7 +1566,7 @@ endif
 # is an exception.
 ifdef CONFIG_DEBUG_INFO_BTF_MODULES
 KBUILD_BUILTIN := 1
-modules: $(mixed-build-prefix)vmlinux
+modules: vmlinux
 endif
 
 modules: modules_prepare
