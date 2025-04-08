@@ -480,6 +480,8 @@ int __initdata dt_root_size_cells;
 void *initial_boot_params __ro_after_init;
 phys_addr_t initial_boot_params_pa __ro_after_init;
 
+static bool __initdata (*arch_is_region_reserved)(phys_addr_t base, phys_addr_t size);
+
 #ifdef CONFIG_OF_EARLY_FLATTREE
 
 static u32 of_fdt_crc32;
@@ -487,6 +489,13 @@ static u32 of_fdt_crc32;
 static int __init early_init_dt_reserve_memory(phys_addr_t base,
 					       phys_addr_t size, bool nomap)
 {
+	if (arch_is_region_reserved && !arch_is_region_reserved(base, size)) {
+		phys_addr_t end = base + size - 1;
+
+		pr_err("mem %pa-%pa not arch reserved\n", &base, &end);
+		return -EINVAL;
+	}
+
 	if (nomap) {
 		/*
 		 * If the memory is already reserved (by another region), we
@@ -501,6 +510,13 @@ static int __init early_init_dt_reserve_memory(phys_addr_t base,
 	}
 	return memblock_reserve(base, size);
 }
+
+void __init early_init_set_rsv_region_verifier(bool (*is_mem_reserved)(phys_addr_t base,
+								       phys_addr_t size))
+{
+	arch_is_region_reserved = is_mem_reserved;
+}
+
 
 /*
  * __reserved_mem_reserve_reg() - reserve all memory described in 'reg' property
