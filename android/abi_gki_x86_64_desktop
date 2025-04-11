@@ -1282,6 +1282,8 @@
   hci_devcd_complete
   hci_devcd_init
   hci_devcd_register
+  hci_drv_cmd_complete
+  hci_drv_cmd_status
   hci_free_dev
   hci_recv_diag
   hci_recv_frame
@@ -2907,6 +2909,7 @@
   strrchr
   strreplace
   strscpy
+  strscpy_pad
   strsep
   strstr
   submit_bio

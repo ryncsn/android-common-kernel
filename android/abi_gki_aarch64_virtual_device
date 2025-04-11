@@ -591,6 +591,8 @@
   gpiod_set_value_cansleep
   hci_cmd_sync_cancel
   hci_devcd_append_pattern
+  hci_drv_cmd_status
+  hci_drv_cmd_complete
   hci_recv_diag
   irq_modify_status
   ktime_get_mono_fast_ns
@@ -601,6 +603,7 @@
   pm_runtime_forbid
   __pm_runtime_suspend
   pm_system_wakeup
+  strscpy_pad
   usb_autopm_get_interface
   usb_autopm_put_interface
   usb_disable_autosuspend

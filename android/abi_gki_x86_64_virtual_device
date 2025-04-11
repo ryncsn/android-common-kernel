@@ -468,6 +468,8 @@
   gpiod_set_value_cansleep
   hci_cmd_sync_cancel
   hci_devcd_append_pattern
+  hci_drv_cmd_status
+  hci_drv_cmd_complete
   hci_recv_diag
   irq_modify_status
   irq_set_irq_wake
@@ -480,6 +482,7 @@
   __pm_runtime_suspend
   pm_system_wakeup
   pm_wakeup_dev_event
+  strscpy_pad
   usb_autopm_get_interface
   usb_autopm_put_interface
   usb_disable_autosuspend
