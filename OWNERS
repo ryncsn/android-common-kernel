@@ -15,8 +15,6 @@ include kernel/common:android-mainline:/OWNERS_DrNo
 allenwebb@google.com
 damiendejean@google.com
 dianders@google.com
-engeg@google.com
-gredelston@google.com
 hmazur@google.com
 jeffxu@google.com
 jorgelo@google.com
@@ -26,5 +24,4 @@ srosek@google.com
 timvp@google.com
 tnowicki@google.com
 wmacek@google.com
-zland@google.com
 zyta@google.com
