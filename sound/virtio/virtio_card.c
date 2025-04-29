@@ -326,9 +326,6 @@ static int virtsnd_probe(struct virtio_device *vdev)
 	virtsnd_enable_event_vq(snd);
 
 on_exit:
-	if (rc)
-		virtsnd_remove(vdev);
-
 	return rc;
 }
 
